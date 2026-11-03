@@ -122,17 +122,40 @@ def save_cached(cache_dir: str, text: str, response: dict, model: str, source_na
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def _client(llm_cfg: dict, timeout: float | None = None, max_retries: int | None = None):
+    import openai
+
+    return openai.OpenAI(
+        timeout=timeout or llm_cfg["timeout_seconds"],
+        max_retries=llm_cfg["max_retries"] if max_retries is None else max_retries,
+        # gzip only: brotli decoding breaks with older brotlicffi builds (e.g. Anaconda's 1.1)
+        default_headers={"Accept-Encoding": "gzip, deflate"},
+    )
+
+
+def check_connection(llm_cfg: dict) -> tuple[bool, str]:
+    """One cheap API call (model lookup) to confirm the key and model work. Never returns the key."""
+    if not os.environ.get("OPENAI_API_KEY"):
+        return False, "OPENAI_API_KEY is not set."
+    import openai
+
+    try:
+        _client(llm_cfg, timeout=15, max_retries=0).models.retrieve(llm_cfg["model"])
+    except openai.AuthenticationError:
+        return False, "The API key was rejected (authentication failed)."
+    except openai.NotFoundError:
+        return False, f"The key works, but model '{llm_cfg['model']}' is not available to it."
+    except Exception as exc:
+        return False, f"Could not reach OpenAI: {type(exc).__name__}"
+    return True, f"Connected. Model '{llm_cfg['model']}' is available."
+
+
 def call_openai(text: str, llm_cfg: dict) -> dict:
     if not os.environ.get("OPENAI_API_KEY"):
         raise LLMUnavailable("OPENAI_API_KEY is not set.")
     import openai
 
-    client = openai.OpenAI(
-        timeout=llm_cfg["timeout_seconds"],
-        max_retries=llm_cfg["max_retries"],
-        # gzip only: brotli decoding breaks with older brotlicffi builds (e.g. Anaconda's 1.1)
-        default_headers={"Accept-Encoding": "gzip, deflate"},
-    )
+    client = _client(llm_cfg)
     kwargs = {
         "model": llm_cfg["model"],
         "messages": [
