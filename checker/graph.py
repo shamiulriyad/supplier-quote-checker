@@ -27,6 +27,7 @@ from .math_check import check_math
 from .models import ExtractedPack, PackResult, RuleResult
 from .parse import DocumentError, read_pdf_pages
 from .rules import check_rules
+from .currency import convert_to_base
 from .verification import verification_checks
 from .verify import merge
 
@@ -71,6 +72,7 @@ class PackState(TypedDict, total=False):
     extraction_source: str
     extracted: ExtractedPack
     pr: dict | None
+    conversion: dict | None
     pr_match: RuleResult
     math_results: list[RuleResult]
     rule_results: list[RuleResult]
@@ -174,8 +176,12 @@ def math_node(state: PackState) -> dict:
 
 @step("check_rules")
 def rules_node(state: PackState) -> dict:
-    results = check_rules(state["extracted"], state.get("pr"), state["math_results"], load_config()["rules"])
-    return {"rule_results": results + [state["pr_match"]] + verification_checks(state["extracted"])}
+    cfg = load_config()
+    # price rules compare in the purchase request's currency; the stored fields keep the quoted amounts
+    in_base, conversion = convert_to_base(state["extracted"], cfg)
+    results = check_rules(in_base, state.get("pr"), state["math_results"], cfg["rules"])
+    return {"rule_results": results + [state["pr_match"]] + verification_checks(state["extracted"]),
+            "conversion": conversion}
 
 
 @step("decide", always_run=True)
@@ -212,7 +218,7 @@ def report_node(state: PackState) -> dict:
         errors=state.get("errors", []),
         human_decision=state.get("human_decision"),
         seconds=round(time.perf_counter() - state.get("started", time.perf_counter()), 2),
-        financial=financial_summary(ex, state.get("pr")),
+        financial=financial_summary(ex, state.get("pr"), state.get("conversion")),
     )
     return {"result": result}
 
@@ -221,18 +227,30 @@ def _num(f):
     return Decimal(f.value) if f.ok else None
 
 
-def financial_summary(ex: ExtractedPack, pr: dict | None) -> dict:
+def financial_summary(ex: ExtractedPack, pr: dict | None, conversion: dict | None = None) -> dict:
     """Numbers for the Financial Analysis view: what the document says, what the maths gives, what was requested.
 
     Read-only: computed from this document's verified fields and its purchase-request line; it does not decide.
     """
     q, price = _num(ex.get("quantity")), _num(ex.get("unit_price"))
+    conv = conversion or {}
+    rate = Decimal(conv["rate"]) if conv.get("rate") else None
+    if conversion is not None and rate is None:
+        price = None  # unclear currency or no company rate: not comparable with the purchase request
+    elif rate is not None and price is not None:
+        price = price * rate
     out = {
+        "currency": conv.get("currency"), "exchange_rate": conv.get("rate"), "rates_as_of": conv.get("rates_as_of"),
+        "currency_note": conv.get("note"),
+        "unit_price_quoted": _num(ex.get("unit_price")), "total_quoted": _num(ex.get("total")),
         "quantity": q, "unit": ex.get("unit").value, "unit_price": price,
         "line_amount": _num(ex.get("line_amount")), "subtotal": _num(ex.get("subtotal")),
         "vat_rate": _num(ex.get("vat_rate")), "vat_amount": _num(ex.get("vat_amount")),
         "total": _num(ex.get("total")), "price_includes_vat": ex.get("price_includes_vat").value,
-        "computed_line_amount": (q * price).quantize(Decimal("0.01")) if q is not None and price is not None else None,
+        "unit_price_bdt": price.quantize(Decimal("0.01")) if price is not None and price == price.quantize(Decimal("0.01"))
+        else (price.quantize(Decimal("0.0001")) if price is not None else None),
+        "computed_line_amount": (q * _num(ex.get("unit_price"))).quantize(Decimal("0.01"))
+        if q is not None and _num(ex.get("unit_price")) is not None else None,
     }
     if pr:
         limit = pr["max_price"] * (1 + load_config()["rules"]["reject_price_over_pct"] / 100)

@@ -25,6 +25,7 @@ FIELD_KINDS: dict[str, str] = {
     "vat_rate": "number",
     "vat_amount": "number",
     "total": "number",
+    "currency": "text",
     "tin": "text",
     "bin": "text",
     "advance_pct": "number",

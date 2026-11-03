@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field as PydField, ValidationError, create_model
 from .models import FIELD_KINDS, ExtractedPack, Field
 from .normalize import parse_date
 
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v3"
 SRC = "llm"
 
 
@@ -53,6 +53,8 @@ FIELD_GUIDE = {
     "vat_rate": "VAT percentage as a number, e.g. 15. NOT_FOUND if VAT is not shown as a separate line.",
     "vat_amount": "VAT amount as a plain number. NOT_FOUND if VAT is not shown as a separate line.",
     "total": "Grand total as a plain number.",
+    "currency": "ISO code of the currency the prices are written in (BDT for BDT/Tk/Taka, USD, EUR, ...). "
+                "Quote the price or total line that shows it. NOT_FOUND if no currency is written.",
     "tin": "Supplier TIN number exactly as printed. NOT_FOUND if the number itself is not printed "
            "(e.g. 'details available on request' is NOT_FOUND).",
     "bin": "Supplier BIN number exactly as printed. NOT_FOUND if the number itself is not printed.",
@@ -267,6 +269,9 @@ def _to_field(name: str, raw: dict) -> Field:
             if low not in ("yes", "no", "true", "false"):
                 return Field(value=None, status="UNCLEAR", note=f"unexpected answer '{value}'", **base)
             parsed = low in ("yes", "true")
+        elif name == "currency":
+            low = value.strip().upper().rstrip(".")
+            parsed = {"TK": "BDT", "TAKA": "BDT", "৳": "BDT", "$": "USD", "US$": "USD", "€": "EUR"}.get(low, low)
         elif name == "quote_date":  # same schema as the regex extractor: ISO date, or unclear
             parsed, problem = parse_date(value.strip())
             if parsed is None:

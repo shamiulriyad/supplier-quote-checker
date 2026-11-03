@@ -137,20 +137,32 @@ def render_decision(result: PackResult, doc: dict) -> None:
     fin = result.financial or {}
     section("Financial analysis")
     if fin:
-        rows = [
+        cur = fin.get("currency")
+        foreign = bool(cur) and cur != "BDT"
+        doc_cur = cur or "currency unclear"
+        if foreign and fin.get("exchange_rate"):
+            conversion = f"1 {cur} = {fin['exchange_rate']} BDT (company rate, as of {fin.get('rates_as_of') or '—'})"
+        elif foreign:
+            conversion = f"no company rate for {cur}: not converted"
+        else:
+            conversion = fin.get("currency_note") or "no conversion needed"
+        rows = [("Currency", cur or "unclear", conversion, "")]
+        if foreign:
+            rows.append((f"Unit price ({cur}, as quoted)", fmt_value(fin.get("unit_price_quoted")), "", ""))
+        rows += [
             ("Quantity", f"{fmt_value(fin.get('quantity'))} {fin.get('unit') or ''}".strip(),
              f"{fmt_value(fin.get('requested_quantity'))} requested" if fin.get("requested_quantity") else "—",
              f"{fin['quantity_deviation_pct']}%" if fin.get("quantity_deviation_pct") else "—"),
-            ("Unit price (BDT)", fmt_value(fin.get("unit_price")),
+            ("Unit price (BDT)" + (", converted" if foreign else ""), fmt_value(fin.get("unit_price")),
              f"max {fin.get('max_unit_price')} (reject above {fin.get('reject_above_price')})"
              if fin.get("max_unit_price") else "—",
              f"{fin['price_deviation_pct']}%" if fin.get("price_deviation_pct") else "—"),
-            ("Line amount (BDT)", _money(fin.get("line_amount")),
+            (f"Line amount ({doc_cur})", _money(fin.get("line_amount")),
              f"quantity × price = {_money(fin.get('computed_line_amount'))}", ""),
-            ("Subtotal (BDT)", _money(fin.get("subtotal")), "", ""),
+            (f"Subtotal ({doc_cur})", _money(fin.get("subtotal")), "", ""),
             ("VAT", f"{fmt_value(fin.get('vat_rate'))}% = {_money(fin.get('vat_amount'))}" if fin.get("vat_rate")
              else ("included in prices" if fin.get("price_includes_vat") else "not shown"), "15% required", ""),
-            ("Total (BDT)", _money(fin.get("total")), "", ""),
+            (f"Total ({doc_cur})", _money(fin.get("total")), "", ""),
         ]
         st.dataframe(pd.DataFrame(rows, columns=["Item", "Document", "Purchase request / check", "Deviation"]),
                      hide_index=True)

@@ -210,8 +210,7 @@ def _show(f: Field, unit: str = "") -> str:
         return f"{f.value}{unit}" + (f" ({f.note})" if f.note and "converted" in f.note else "")
     if f.status == "NOT_FOUND":
         return "not in the document"
-    return f"unclear: {f.note or 'could not be verified'}" + (f" (reading {f.value}{unit})" if f.value is not None
-                                                             else "")
+    return f"unclear: {f.note or 'could not be verified'}" + (f" (reading {f.value})" if f.value is not None else "")
 
 
 def annotate(r: RuleResult, ex: ExtractedPack, pr: dict | None, rules: dict,
