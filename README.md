@@ -87,10 +87,10 @@ python evaluate.py --mode regex
 cp .env.example .env          # then put your OPENAI_API_KEY in .env
 python evaluate.py --mode live
 
-# 3. The web app
+# 3. The web app (http://localhost:8501)
 streamlit run app.py
 
-# Tests (68 tests: rule boundaries, hallucination checks, pipeline, human review)
+# Tests (95 tests: rules, hallucination checks, pipeline, batch runner, review, UI)
 python -m pytest -q
 ```
 
@@ -112,6 +112,44 @@ python run.py                     # all packs; writes outputs/results.json and o
 
 Run `python evaluate.py --mode live` once and commit `cache/llm/`. After that, anyone can reproduce the LLM results with `--mode replay` without a key.
 
+## The web app
+
+`streamlit run app.py` opens **Supplier Intelligence**, a multi-page dashboard:
+
+| Page | What it shows |
+|---|---|
+| Overview | Totals, approval/rejection/review counts, success rate, average time, recent activity, charts. All computed from processed documents. |
+| Document Processing | Add the 10 samples or upload PDFs → queue with size and validation → **Start processing** → live monitor. |
+| All Documents | Every document with full details: evidence quotes, all 24 extracted fields (click a row for the exact quote), all rule results, extracted text, PDF preview, processing log. |
+| Validation Results | Rule matrix (documents × rules) and rule-failure chart per batch. |
+| Human Review | Documents the system would not decide. Approve/Reject with a reason; this resumes the paused LangGraph run. |
+| Processing History | Past batches and documents, filterable by date, supplier, decision, mode and status. |
+| Settings | Mode (Auto / Live / Replay / Offline), OpenAI model and connection test, rule thresholds, storage. |
+
+### How the live monitor works
+
+- **One background thread per batch** processes the documents one at a time, in order
+  ([service/batch.py](service/batch.py)). The page is never blocked: you can open finished results, or go to
+  another page, while the next PDF runs.
+- **Progress comes from LangGraph itself.** `graph.stream(..., stream_mode="tasks")` reports when each node starts
+  and finishes, with its output. [service/progress.py](service/progress.py) turns these into events. Each UI stage
+  is exactly one graph node (Read & validate PDF → Extract fields → Cross-validate → Match purchase request →
+  Re-check arithmetic → Evaluate company rules → Decide → Human review → Report). Nothing is simulated.
+- The monitor redraws once per second with `st.fragment(run_every=1)` from a thread-safe snapshot. It shows the
+  batch progress, a card per document with its stage track, the current document's details, and the live log.
+- **Cancel** stops after the current document. A document is never stopped half-way.
+- If a document fails (e.g. corrupted PDF), the failure is recorded at the stage where it happened, the document
+  goes to a person, and the batch continues with the next one.
+
+### Human review and persistence
+
+- A *Needs review* document pauses at the `human_review` node (`interrupt()`). Submitting a decision calls
+  `Command(resume={"decision", "comment"})` on that document's own thread. A database claim blocks double
+  submissions.
+- Checkpoints, history and events are stored in SQLite under `runtime/` (not in git). A document waiting for
+  review can still be reviewed after the app restarts. Work that was running when the app stopped is marked
+  *interrupted*.
+
 ## Deploy on Streamlit Community Cloud
 
 1. Push this repo to GitHub (public).
@@ -125,14 +163,18 @@ Run `python evaluate.py --mode live` once and commit `cache/llm/`. After that, a
 ## Project structure
 
 ```
-checker/          the pipeline (one file per step) + graph.py (LangGraph wiring)
+checker/          business logic: the pipeline (one file per step) + graph.py (LangGraph wiring)
+service/          no Streamlit: progress events, queue, background batch runner, SQLite history
+ui/               Streamlit: theme, sidebar, shared components, charts, one module per page (ui/pages/)
+app.py            entry point: page setup and navigation
 data/             the 10 sample packs, purchase request, company rules
 cache/llm/        saved OpenAI answers (for replay mode)
+runtime/          created at run time: history.db, checkpoints.db, uploads/ (not in git)
 tests/            expected.csv (answer key) + pytest suite
-app.py            Streamlit app (run, inspect, human review)
 run.py            command line runner
 evaluate.py       score against tests/expected.csv
 config.yaml       rule thresholds, model, mode
+docs/             architecture audit
 ```
 
 ## Assumptions (where the rules are not explicit)
@@ -149,4 +191,4 @@ config.yaml       rule thresholds, model, mode
 
 ## Limitations
 
-See [NOTE.md](NOTE.md). In short: text PDFs only (no OCR), one item per quotation, the regex extractor is tuned to this document layout, and the human-review answers are kept in memory only.
+See [NOTE.md](NOTE.md). In short: text PDFs only (no OCR), and one item per quotation. The regex extractor is tuned to this document layout. History lives in a local SQLite file: on Streamlit Community Cloud it is lost when the app is rebooted, and it is shared by everyone using the same deployment (there is no login). Only one batch runs at a time per server.
