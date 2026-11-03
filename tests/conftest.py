@@ -39,6 +39,43 @@ def llm_answer_from(ex: ExtractedPack) -> dict:
     return out
 
 
+@pytest.fixture(autouse=True)
+def no_real_supabase(monkeypatch):
+    """Unit tests never touch a real Supabase project, even if .env configures one.
+
+    Empty values (not deleted) so checker.env.load_dotenv, which only fills missing names, cannot set them.
+    Integration tests use the separate SUPABASE_TEST_* variables.
+    """
+    for name in ("SUPABASE_URL", "SUPABASE_KEY", "SUPABASE_DB_URL", "SUPABASE_STORAGE_BUCKET"):
+        monkeypatch.setenv(name, "")
+    # Streamlit copies .streamlit/secrets.toml into os.environ (overwriting the empty values above),
+    # so point AppTest-run apps at a secrets file that does not exist.
+    from streamlit import config as st_config
+    from streamlit.runtime.secrets import secrets_singleton
+
+    original = st_config.get_option("secrets.files")
+    st_config.set_option("secrets.files", [str(ROOT / "tests" / "no-secrets-for-tests.toml")])
+    secrets_singleton._reset()
+    yield
+    st_config.set_option("secrets.files", original)
+    secrets_singleton._reset()
+
+
+@pytest.fixture(autouse=True)
+def isolated_recordings(tmp_path, monkeypatch):
+    """No test reads the developer's local recordings (data/llm-replay/, cache/llm/): those are git-ignored
+    and absent from a fresh clone. Tests that need recordings create them in their own temp folder."""
+    monkeypatch.setattr(extract_llm, "FIXTURES_DIR", tmp_path / "no-fixtures")
+    extract_llm.set_cache_backend(extract_llm.FileCache(tmp_path / "recordings"))
+    yield
+    extract_llm.set_cache_backend(None)
+
+
+def record(text: str, name: str = "test.pdf") -> None:
+    """Save a recorded OpenAI-style response for this exact text (what a live run would have saved)."""
+    extract_llm.save_cached("unused", text, llm_answer_from(extract_regex(text)), "gpt-test", name)
+
+
 @pytest.fixture
 def rules():
     return load_config()["rules"]
