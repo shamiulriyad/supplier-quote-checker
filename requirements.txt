@@ -1,7 +1,10 @@
 langgraph>=1.2,<2
+langgraph-checkpoint-sqlite>=3.0
 openai>=3.0,<4
 pdfplumber>=0.11
 pydantic>=2.7,<3
 PyYAML>=6.0
 streamlit>=1.51
+pandas>=2.0
+plotly>=5.20
 pytest>=8.0
