@@ -12,12 +12,13 @@ import pandas as pd
 import streamlit as st
 
 from checker.config import load_config
-from service.batch import BatchState, DocumentJob
+from checker.graph import analysis_kind
+from service.batch import BatchStartError, BatchState, DocumentJob
 from service.progress import STAGE_LABEL, STAGE_NAMES, STAGES
 
 from .. import nav
 from ..state import MODES, api_status, external_calls_enabled, get_engine, get_mode, get_queue
-from ..theme import (STAGE_ICON, badge, decision_badge, empty_state, explain_error, fmt_bytes, fmt_ms,
+from ..theme import (ANALYSIS, STAGE_ICON, analysis_badge, badge, decision_badge, empty_state, explain_error, fmt_bytes, fmt_ms,
                      fmt_seconds, kv, page_header, section, status_badge)
 
 DONE = ("completed", "waiting_review", "reviewed", "failed")
@@ -28,8 +29,11 @@ def mode_bar() -> None:
     label, tone = api_status()
     calls = badge("External API calls on", "accent") if external_calls_enabled(mode) else badge("No API calls", "neutral")
     st.html(f'<div class="si-meta" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;'
-            f'margin-bottom:6px">Mode {badge(MODES[mode][0], "accent")} {calls} OpenAI {badge(label, tone)}'
-            f'<span>{escape(MODES[mode][1])}</span></div>')
+            f'margin-bottom:6px">Mode {badge(MODES[mode][0], "warning" if mode == "replay" else "accent")} {calls} '
+            f'OpenAI {badge(label, tone)}<span>{escape(MODES[mode][1])}</span></div>')
+    if mode == "replay":
+        st.warning("Testing mode: documents are read from **recorded AI responses — not live AI**. "
+                   "Turn it off in Settings → Developer / testing options.")
 
 
 # ============================================================== queue
@@ -83,7 +87,12 @@ def render_queue() -> None:
     busy = bool(engine.runner and engine.runner.is_running())
     c1, c2, c3, _ = st.columns([1.4, 1.4, 1.1, 3])
     if c1.button("Start processing", type="primary", icon=":material/play_arrow:", disabled=busy):
-        engine.start_batch(list(queue.items), mode)
+        try:
+            with st.spinner("Saving the documents to storage…"):
+                engine.start_batch(list(queue.items), mode)
+        except BatchStartError as exc:
+            st.error(f"{exc} The queue was kept; try again.")
+            return
         queue.clear()
         st.session_state.monitor_live = True
         st.session_state.pop("dismissed_batch", None)
@@ -151,14 +160,9 @@ def steps_list(job: DocumentJob) -> str:
 
 def current_details(job: DocumentJob, mode: str) -> str:
     src = job.extraction_source or ""
-    if "saved OpenAI" in src:
-        provider = "OpenAI (saved answer, no API call)"
-    elif "OpenAI" in src:
-        provider = "OpenAI"
-    elif src:
-        provider = "None (regex only)"
-    else:
-        provider = "Not started" if job.status in ("queued", "running") else "—"
+    kind = analysis_kind(src)
+    provider = {"live": "OpenAI (live call)", "replay": "Recorded OpenAI response (no API call)",
+                "regex": "None (regex only)"}.get(kind, "Not started" if job.status in ("queued", "running") else "—")
     elapsed = job.seconds if job.seconds is not None else (
         (datetime.now() - job.started_at).total_seconds() if job.started_at else None)
     rules = job.stages["check_rules"]
@@ -169,9 +173,10 @@ def current_details(job: DocumentJob, mode: str) -> str:
         ("Current stage", STAGE_LABEL.get(job.current_stage, "—") if job.status == "running" else "—"),
         ("Extracted text", f"{job.characters:,} characters" if job.characters is not None else "—"),
         ("Fields verified", f"{job.fields_found} of 24" if job.fields_found is not None else "—"),
+        ("Analysis", ("html", analysis_badge(src)) if src else "—"),
         ("AI provider", provider),
-        ("Model", load_config()["llm"]["model"] if "OpenAI" in src else "—"),
-        ("Extraction source", src or "—"),
+        ("Model", load_config()["llm"]["model"] if kind in ("live", "replay") else "—"),
+        ("Extraction detail", src or "—"),
         ("Processing time", fmt_seconds(elapsed)),
         ("Rule evaluation", rule_progress),
         ("Decision", ("html", decision_badge(job.decision)) if job.decision else "—"),
@@ -237,6 +242,13 @@ def _monitor_body() -> None:
     if c["needs_review"] and b3.button(f"Open human review ({c['needs_review']})", icon=":material/how_to_reg:"):
         nav.go("review")
 
+    if c["unsaved"]:
+        st.warning(f"{c['unsaved']} result(s) could not be saved to the database yet (connection problem). "
+                   "They are kept in memory; nothing is lost while the app keeps running.")
+        if st.button("Retry saving", key="retry-unsaved"):
+            left = runner.retry_unsaved()
+            st.toast("All results saved" if not left else f"{left} still not saved")
+
     running = next((j for j in snap.jobs if j.status == "running"), None)
     last_done = next((j for j in reversed(snap.jobs) if j.status in DONE), None)
     left, right = st.columns([5, 4], gap="medium")
@@ -266,6 +278,7 @@ def _monitor_body() -> None:
         st.caption("The first result appears here as soon as the first document finishes.")
         return
     df = pd.DataFrame([{"#": f"{j.position:02d}", "Document": j.filename, "Supplier": j.supplier or "—",
+                        "Analysis": ANALYSIS[analysis_kind(j.extraction_source)][0],
                         "Decision": j.decision or "—", "Human decision": j.human_decision or "—",
                         "Status": j.status.replace("_", " "), "Time": fmt_seconds(j.seconds)} for j in done])
     event = st.dataframe(df, hide_index=True, on_select="rerun", selection_mode="single-row", key="results-table")

@@ -8,7 +8,7 @@ from checker.config import load_config
 from checker.extract_llm import check_connection
 from service import __version__
 
-from ..state import MODES, api_key_configured, api_status, effective_source, external_calls_enabled, get_engine, \
+from ..state import MODES, PUBLIC_MODES, api_key_configured, api_status, effective_source, external_calls_enabled, get_engine, \
     get_mode
 from ..theme import badge, kv, page_header, section
 
@@ -35,11 +35,25 @@ def render() -> None:
 
     section("Processing mode")
     current = get_mode()
-    mode = st.radio("How documents are read", list(MODES), index=list(MODES).index(current),
-                    format_func=lambda m: MODES[m][0], captions=[MODES[m][1] for m in MODES], disabled=busy)
-    if mode != current:
+    testing = current == "replay"
+    mode = st.radio("How documents are read", PUBLIC_MODES,
+                    index=PUBLIC_MODES.index(current) if current in PUBLIC_MODES else 0,
+                    format_func=lambda m: MODES[m][0], captions=[MODES[m][1] for m in PUBLIC_MODES],
+                    disabled=busy or testing)
+    if not testing and mode != current:
         st.session_state.mode = mode
         st.rerun()
+    with st.expander("Developer / testing options", expanded=testing):
+        st.write("Replay runs the pipeline on **recorded** OpenAI responses (the 10 sample packs only) so tests and "
+                 "demos are repeatable without API calls. It is not live AI: results are labelled "
+                 "**Recorded AI Response — Not Live**. Documents without a recording get regex-only analysis; "
+                 "another document's recording is never reused.")
+        use_replay = st.toggle("Use recorded AI responses (replay mode)", value=testing, disabled=busy)
+        if use_replay != testing:
+            st.session_state.mode = "replay" if use_replay else "auto"
+            st.rerun()
+    if testing:
+        st.warning("Testing mode is on: documents are read from recorded AI responses, not live AI.")
     if busy:
         st.caption("The mode cannot be changed while a batch is running; the running batch keeps its mode.")
     if mode == "live" and not api_key_configured():
@@ -74,18 +88,84 @@ def render() -> None:
                                for k, v in cfg["rules"].items()]), hide_index=True)
     st.caption("Rules are code in checker/rules.py; the thresholds above come from config.yaml (read-only here).")
 
+    render_storage(engine, busy)
+
+
+def render_storage(engine, busy: bool) -> None:
     section("Storage")
     store = engine.store
-    st.html(kv([("History database", str(engine.runtime_dir / "history.db")),
-                ("Review checkpoints", str(engine.runtime_dir / "checkpoints.db")),
-                ("Batches stored", str(len(store.batches()))),
-                ("Waiting for review", str(len(store.pending_reviews()))),
-                ("Version", __version__)]))
-    with st.expander("Clear processing history"):
-        st.write("Deletes all batches, documents and events from the history database. "
-                 "Documents waiting for review will no longer be listed.")
-        sure = st.checkbox("I understand this cannot be undone", disabled=busy)
-        if st.button("Clear history", disabled=not sure or busy):
-            store.clear()
+    st.html(kv([
+        ("Backend", engine.settings.label),
+        ("Persistent", ("html", badge("Yes: survives restarts and redeploys", "success") if engine.persistent
+                        else badge("Only on this machine (temporary on Streamlit Cloud)", "warning"))),
+        ("PDF files", f"Private bucket '{engine.settings.bucket}'" if engine.persistent
+         else str(engine.runtime_dir / "files")),
+        ("Batches stored", str(len(store.batches()))),
+        ("Waiting for review", str(len(store.pending_reviews()))),
+        ("Version", __version__),
+    ]))
+    if st.button("Test storage connection", help="Runs one database query and one bucket lookup."):
+        with st.spinner("Checking…"):
+            st.session_state.storage_check = engine.status()
+    check = st.session_state.get("storage_check")
+    if check:
+        for label, (ok, msg) in (("Database", check["database"]), ("Files", check["files"])):
+            (st.success if ok else st.error)(f"{label}: {msg}")
+    if not engine.persistent:
+        st.caption("Set SUPABASE_URL, SUPABASE_KEY and SUPABASE_DB_URL to keep history and PDFs permanently "
+                   "(README, Supabase setup).")
+    if engine.legacy_history:
+        st.info("An older local history (runtime/history.db) was found. Import it with "
+                "`python tools/migrate_local_history.py`.")
+
+    render_clear_history(engine, busy)
+
+
+def render_clear_history(engine, busy: bool) -> None:
+    store = engine.store
+    pending = store.pending_deletion()
+    with st.expander("Clear processing history", expanded=bool(st.session_state.get("confirm_clear"))):
+        docs = store.documents()
+        files = {d["storage_path"] for d in docs if d.get("storage_path")}
+        st.write(f"Permanently deletes **{len(docs)} documents** in **{len(store.batches())} batches**, their "
+                 f"processing events and step checkpoints, the paused review pipelines, **{len(files)} stored "
+                 "PDF files** and the cached AI answers for these documents. Files and records that belong to "
+                 "nothing in this history are never touched.")
+        if pending:
+            st.warning(f"{pending} document(s) from an earlier clear are still marked for deletion "
+                       "(their files could not be deleted). Clearing again retries them.")
+        if busy:
+            st.info("Wait for the running batch to finish first.")
+            return
+        if not st.session_state.get("confirm_clear"):
+            if st.button("Clear history…", disabled=not (docs or pending)):
+                st.session_state.confirm_clear = True
+                st.rerun()
+            return
+        typed = st.text_input("Type DELETE to confirm", key="clear-confirm-text")
+        c1, c2, _ = st.columns([1.4, 1, 3])
+        if c2.button("Cancel"):
+            st.session_state.confirm_clear = False
+            st.rerun()
+        if c1.button("Permanently delete", type="primary", disabled=typed.strip() != "DELETE"):
+            with st.spinner("Deleting…"):
+                try:
+                    report = engine.clear_history()
+                except Exception as exc:
+                    st.error(f"Clear History stopped: {exc}. Nothing that was already deleted can be restored; "
+                             "run it again to finish.")
+                    return
+            st.session_state.confirm_clear = False
             st.session_state.pop("dismissed_batch", None)
-            st.success("History cleared.")
+            st.session_state.clear_report = report
+            st.rerun()
+    report = st.session_state.pop("clear_report", None)
+    if report:
+        msg = (f"Deleted {report.documents_deleted} documents, {report.files_deleted} files, "
+               f"{report.checkpoints_deleted} review pipelines and {report.cache_entries_deleted} cached answers.")
+        if report.complete:
+            st.success(msg)
+        else:
+            st.warning(msg + f" Not finished: {len(report.files_failed)} file(s) and {report.checkpoints_failed} "
+                       f"pipeline(s) could not be deleted; {report.documents_kept} document(s) stay marked for "
+                       "deletion. Run Clear History again to retry.")

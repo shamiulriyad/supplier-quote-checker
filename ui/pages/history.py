@@ -1,11 +1,12 @@
-"""Processing History, read from the SQLite store (runtime/history.db)."""
+"""Processing History, read from the history store (Supabase PostgreSQL, or local SQLite)."""
 from datetime import date, datetime
 
 import pandas as pd
 import streamlit as st
 
+from .. import nav
 from ..components import render_document
-from ..state import MODES, get_engine
+from ..state import MODES, get_engine, get_queue
 from ..theme import empty_state, fmt_dt, fmt_seconds, page_header, section
 
 
@@ -13,12 +14,21 @@ def render() -> None:
     engine = get_engine()
     store = engine.store
     page_header("Processing History", "Previous batches and their documents.")
-    st.caption(f"Stored in a local SQLite file ({engine.runtime_dir.name}/history.db). It survives app restarts on "
-               "this machine. On Streamlit Community Cloud the file is lost when the app is rebooted or redeployed, "
-               "and everyone using the same deployment sees the same history.")
-    if engine.stale_on_start:
-        st.info(f"{engine.stale_on_start} document(s) were still queued or running when the app last stopped; "
-                "they are marked as interrupted.")
+    if engine.persistent:
+        st.caption("Stored in Supabase (PostgreSQL + a private Storage bucket): it survives restarts and redeploys. "
+                   "There is no login yet, so everyone using this deployment sees the same history.")
+    else:
+        st.caption(f"Stored locally ({engine.runtime_dir.name}/app.db and {engine.runtime_dir.name}/files). On "
+                   "Streamlit Community Cloud this is lost when the app restarts; configure Supabase to keep it.")
+    interrupted = store.interrupted()
+    if interrupted:
+        st.info(f"{len(interrupted)} document(s) were queued or running when the app stopped (marked "
+                "*interrupted*). Their PDFs are stored, so they can be processed again.")
+        if st.button(f"Re-queue {len(interrupted)} interrupted document(s)", icon=":material/replay:"):
+            msgs = engine.requeue([d["document_id"] for d in interrupted], get_queue())
+            st.toast("; ".join(msgs)[:300])
+            st.session_state.dismissed_batch = engine.runner.batch.batch_id if engine.runner else None
+            nav.go("processing")
 
     batches = store.batches()
     docs = store.documents()
