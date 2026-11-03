@@ -1,0 +1,152 @@
+{
+  "document": "supplier-pack-01.pdf",
+  "model": "gpt-4o-mini",
+  "prompt_version": "v2",
+  "created": "2026-11-03T03:43:01+00:00",
+  "response": {
+    "supplier_name": {
+      "value": "Padma Textile Mills Ltd",
+      "quote": "Padma Textile Mills Ltd",
+      "status": "FOUND",
+      "note": null
+    },
+    "quotation_no": {
+      "value": "QT-2026-901",
+      "quote": "Quotation no. QT-2026-901",
+      "status": "FOUND",
+      "note": null
+    },
+    "quote_date": {
+      "value": "2026-10-21",
+      "quote": "Date 2026-10-21",
+      "status": "FOUND",
+      "note": null
+    },
+    "pr_reference": {
+      "value": "PR-2026-114",
+      "quote": "Reference PR-2026-114",
+      "status": "FOUND",
+      "note": null
+    },
+    "item_code": {
+      "value": "A",
+      "quote": "A Cotton twill fabric, 280 gsm 12,000 metre 472.00 5,664,000.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "description": {
+      "value": "Cotton twill fabric, 280 gsm",
+      "quote": "Cotton twill fabric, 280 gsm",
+      "status": "FOUND",
+      "note": null
+    },
+    "unit": {
+      "value": "metre",
+      "quote": "12,000 metre",
+      "status": "FOUND",
+      "note": null
+    },
+    "quantity": {
+      "value": "12000",
+      "quote": "12,000 metre",
+      "status": "FOUND",
+      "note": null
+    },
+    "unit_price": {
+      "value": "472.00",
+      "quote": "472.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "price_includes_vat": {
+      "value": "no",
+      "quote": "VAT 15% 849,600.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "line_amount": {
+      "value": "5664000.00",
+      "quote": "5,664,000.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "subtotal": {
+      "value": "5664000.00",
+      "quote": "Subtotal 5,664,000.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "vat_rate": {
+      "value": "15",
+      "quote": "VAT 15% 849,600.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "vat_amount": {
+      "value": "849600.00",
+      "quote": "849,600.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "total": {
+      "value": "6513600.00",
+      "quote": "Total 6,513,600.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "tin": {
+      "value": "101458013391",
+      "quote": "Supplier TIN: 101458013391",
+      "status": "FOUND",
+      "note": null
+    },
+    "bin": {
+      "value": "000170141-0101",
+      "quote": "BIN: 000170141-0101",
+      "status": "FOUND",
+      "note": null
+    },
+    "advance_pct": {
+      "value": "10",
+      "quote": "10% advance payable with the purchase order.",
+      "status": "FOUND",
+      "note": null
+    },
+    "payment_days_min": {
+      "value": "45",
+      "quote": "Balance payable within 45 days after delivery and acceptance of goods.",
+      "status": "FOUND",
+      "note": null
+    },
+    "payment_days_max": {
+      "value": "45",
+      "quote": "Balance payable within 45 days after delivery and acceptance of goods.",
+      "status": "FOUND",
+      "note": null
+    },
+    "delivery_days": {
+      "value": "24 days",
+      "quote": "Delivery within 24 days of receiving the purchase order.",
+      "status": "FOUND",
+      "note": null
+    },
+    "penalty_pct": {
+      "value": "1",
+      "quote": "Late delivery penalty: 1% of order value for each full week of delay.",
+      "status": "FOUND",
+      "note": null
+    },
+    "penalty_basis": {
+      "value": "order value",
+      "quote": "1% of order value for each full week of delay.",
+      "status": "FOUND",
+      "note": null
+    },
+    "validity_days": {
+      "value": "45 days",
+      "quote": "This quotation is valid for 45 days from the date above.",
+      "status": "FOUND",
+      "note": null
+    }
+  }
+}

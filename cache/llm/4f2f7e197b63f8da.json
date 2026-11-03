@@ -1,0 +1,152 @@
+{
+  "document": "supplier-pack-03.pdf",
+  "model": "gpt-4o-mini",
+  "prompt_version": "v2",
+  "created": "2026-11-03T03:43:19+00:00",
+  "response": {
+    "supplier_name": {
+      "value": "Karnaphuli Yarn Traders",
+      "quote": "Karnaphuli Yarn Traders",
+      "status": "FOUND",
+      "note": null
+    },
+    "quotation_no": {
+      "value": "QT-2026-903",
+      "quote": "Quotation no. QT-2026-903",
+      "status": "FOUND",
+      "note": null
+    },
+    "quote_date": {
+      "value": "2026-10-23",
+      "quote": "Date 2026-10-23",
+      "status": "FOUND",
+      "note": null
+    },
+    "pr_reference": {
+      "value": "PR-2026-114",
+      "quote": "Reference PR-2026-114",
+      "status": "FOUND",
+      "note": null
+    },
+    "item_code": {
+      "value": "C",
+      "quote": "C Polyester sewing thread, cone 800 cone 229.00 183,200.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "description": {
+      "value": "Polyester sewing thread, cone",
+      "quote": "Polyester sewing thread, cone",
+      "status": "FOUND",
+      "note": null
+    },
+    "unit": {
+      "value": "cone",
+      "quote": "800 cone 229.00 183,200.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "quantity": {
+      "value": "800",
+      "quote": "800 cone 229.00 183,200.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "unit_price": {
+      "value": "229.00",
+      "quote": "800 cone 229.00 183,200.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "price_includes_vat": {
+      "value": "no",
+      "quote": "VAT 15% 27,480.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "line_amount": {
+      "value": "183200.00",
+      "quote": "800 cone 229.00 183,200.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "subtotal": {
+      "value": "183200.00",
+      "quote": "Subtotal 183,200.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "vat_rate": {
+      "value": "15",
+      "quote": "VAT 15% 27,480.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "vat_amount": {
+      "value": "27480.00",
+      "quote": "VAT 15% 27,480.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "total": {
+      "value": "210680.00",
+      "quote": "Total 210,680.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "tin": {
+      "value": "103458033391",
+      "quote": "Supplier TIN: 103458033391",
+      "status": "FOUND",
+      "note": null
+    },
+    "bin": {
+      "value": "000370341-0101",
+      "quote": "BIN: 000370341-0101",
+      "status": "FOUND",
+      "note": null
+    },
+    "advance_pct": {
+      "value": "15",
+      "quote": "15% advance payable with the purchase order.",
+      "status": "FOUND",
+      "note": null
+    },
+    "payment_days_min": {
+      "value": "40",
+      "quote": "Balance within 40 days of delivery.",
+      "status": "FOUND",
+      "note": null
+    },
+    "payment_days_max": {
+      "value": "40",
+      "quote": "Balance within 40 days of delivery.",
+      "status": "FOUND",
+      "note": null
+    },
+    "delivery_days": {
+      "value": "20 days",
+      "quote": "Delivery within 20 days of PO.",
+      "status": "FOUND",
+      "note": null
+    },
+    "penalty_pct": {
+      "value": "0.5",
+      "quote": "Delay in delivery will attract a penalty of 0.5% of order value per week.",
+      "status": "FOUND",
+      "note": null
+    },
+    "penalty_basis": {
+      "value": "order value",
+      "quote": "penalty of 0.5% of order value per week.",
+      "status": "FOUND",
+      "note": null
+    },
+    "validity_days": {
+      "value": "30 days",
+      "quote": "This quotation is valid for 30 days from the date above.",
+      "status": "FOUND",
+      "note": null
+    }
+  }
+}
