@@ -1,9 +1,26 @@
+# secrets
 .env
 .streamlit/secrets.toml
+
+# local data created when the app runs (history, PDFs, LLM answers, reports)
+# data/llm-replay: recorded OpenAI responses, used only by the replay testing mode
+runtime/
+cache/llm/
+data/llm-replay/
+outputs/
+migration-report-*.json
+docs/
+
+# Python
 __pycache__/
 *.pyc
 .pytest_cache/
-outputs/
 .venv/
 venv/
-runtime/
+
+# demo and live-Supabase test material (local use only)
+demo-pdfs/
+tools/make_demo_pdfs.py
+requirements-dev.txt
+tests/test_demo_pdfs.py
+tests/integration/
