@@ -29,8 +29,10 @@ OUTCOME_TONE = {"PASS": "success", "FAIL": "error", "UNKNOWN": "warning", "N/A":
 
 CSS = f"""
 <style>
-/* top padding must clear Streamlit's fixed header bar (3.75rem), or it covers the page title */
-.block-container {{ padding-top: 4.5rem; padding-bottom: 3rem; max-width: 1320px; }}
+/* Top padding must clear Streamlit's fixed header bar (about 60px on Streamlit Cloud, with the
+   Share / GitHub toolbar), or it covers the page title. Pixels, not rem: baseFontSize is 14px. */
+.block-container, [data-testid="stMainBlockContainer"] {{
+    padding-top: 96px !important; padding-bottom: 3rem; max-width: 1320px; }}
 h1 {{ font-size: 1.5rem !important; font-weight: 600 !important; letter-spacing: -0.01em; }}
 h2 {{ font-size: 1.15rem !important; font-weight: 600 !important; }}
 h3 {{ font-size: 1rem !important; font-weight: 600 !important; }}
