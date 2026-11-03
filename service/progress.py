@@ -13,7 +13,7 @@ from typing import Any, Callable
 # (node name, label, what it does). Order = pipeline order.
 STAGES: list[tuple[str, str, str]] = [
     ("parse", "Read & validate PDF", "Open the PDF and extract its text"),
-    ("extract", "Extract fields", "Regex extractor, plus OpenAI in live/replay mode"),
+    ("extract", "Extract fields", "Regex extractor, plus OpenAI in live mode (recorded responses only in replay testing mode)"),
     ("verify", "Cross-validate", "Quotes must exist in the PDF; OpenAI and regex must agree"),
     ("match_pr", "Match purchase request", "Find the purchase-request line for the item"),
     ("check_math", "Re-check arithmetic", "Line amount, subtotal, VAT and total"),
@@ -115,11 +115,16 @@ class StreamOutcome:
 
 
 def stream_document(graph, payload, config: dict, document_id: str, filename: str,
-                    emit: Callable[[ProgressEvent], None]) -> StreamOutcome:
-    """Run (or resume) one document through the graph, emitting an event per node start/finish."""
+                    emit: Callable[[ProgressEvent], None], durability: str | None = None) -> StreamOutcome:
+    """Run (or resume) one document through the graph, emitting an event per node start/finish.
+
+    durability="exit" saves the graph state once, when the run ends or pauses for review, instead of
+    after every node: one database round trip per document on Supabase instead of ten.
+    """
     outcome = StreamOutcome()
     started: dict[str, float] = {}
-    for chunk in graph.stream(payload, config, stream_mode="tasks"):
+    extra = {"durability": durability} if durability else {}
+    for chunk in graph.stream(payload, config, stream_mode="tasks", **extra):
         name = chunk["name"]
         if "result" not in chunk:  # task started
             started[chunk["id"]] = time.perf_counter()

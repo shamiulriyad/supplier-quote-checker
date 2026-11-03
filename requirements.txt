@@ -1,5 +1,6 @@
 langgraph>=1.2,<2
 langgraph-checkpoint-sqlite>=3.0
+langgraph-checkpoint-postgres>=3.0
 openai>=3.0,<4
 pdfplumber>=0.11
 pydantic>=2.7,<3
@@ -7,4 +8,7 @@ PyYAML>=6.0
 streamlit==1.51.0
 pandas>=2.0
 plotly>=5.20
+supabase>=2.30
+psycopg[binary]>=3.2
+psycopg-pool>=3.2
 pytest>=8.0
