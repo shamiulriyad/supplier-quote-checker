@@ -1,0 +1,30 @@
+# All paths are relative to the repo root.
+purchase_request: data/purchase-request.csv
+documents_dir: data
+cache_dir: cache/llm
+
+# auto   = use OpenAI if OPENAI_API_KEY is set, else saved LLM answers (replay), else regex only
+# live   = always call OpenAI (and save the answer to cache_dir)
+# replay = use saved LLM answers only, no API calls
+# regex  = no LLM at all, regex extractor only (fully offline)
+mode: auto
+
+llm:
+  model: gpt-4o-mini        # override with env var OPENAI_MODEL
+  temperature: 0
+  timeout_seconds: 60
+  max_retries: 2
+
+# Company rules (company-rules.md). Change a number here to change the rule.
+rules:
+  reject_price_over_pct: 3          # Reject R1 / Review N1
+  max_advance_pct: 20               # Reject R2
+  max_delivery_days: 45             # Reject R5
+  review_delivery_from_days: 31     # Review N4 (31..45)
+  qty_tolerance_pct: 5              # Review N2
+  payment_days_min: 30              # Review N3
+  payment_days_max: 60              # Review N3
+  vat_rate_pct: 15                  # Review N5
+  min_validity_days: 30             # Review N7
+  min_penalty_pct_per_week: 0.5     # Other notes -> Review P1
+  math_tolerance: 0.01              # Review N6 (BDT)
