@@ -4,9 +4,9 @@ documents_dir: data
 cache_dir: cache/llm
 runtime_dir: runtime        # history database, review checkpoints, uploaded PDFs (not in git)
 
-# auto   = use OpenAI if OPENAI_API_KEY is set, else saved LLM answers (replay), else regex only
-# live   = always call OpenAI (and save the answer to cache_dir)
-# replay = use saved LLM answers only, no API calls
+# auto   = live OpenAI analysis if OPENAI_API_KEY is set, otherwise regex only. Never uses recorded responses.
+# live   = always call OpenAI (the answer is also saved to cache_dir, for audit and replay testing)
+# replay = TESTING ONLY: OpenAI responses recorded by earlier live runs, never presented as live AI
 # regex  = no LLM at all, regex extractor only (fully offline)
 mode: auto
 

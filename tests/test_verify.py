@@ -63,4 +63,7 @@ def test_weeks_converted_value_matches_quote():
 
 
 def test_no_llm_means_regex_only():
-    assert merge(None, RX, TEXT) is RX
+    merged = merge(None, RX, TEXT)
+    assert {n: f.value for n, f in merged.fields.items()} == {n: f.value for n, f in RX.fields.items()}
+    assert merged.get("unit_price").verification == "regex only"
+    assert merged.get("penalty_basis").verification in ("regex only", "not found")

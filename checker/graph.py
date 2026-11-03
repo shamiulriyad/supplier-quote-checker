@@ -6,6 +6,7 @@ Every step does one job and writes its result into the shared state. If a step c
 error is recorded, the remaining steps are skipped and the pack goes to a person.
 """
 import operator
+from decimal import Decimal
 import os
 import time
 from functools import lru_cache, wraps
@@ -24,15 +25,35 @@ from .extract_regex import extract_regex
 from .match import load_purchase_request, match_pr
 from .math_check import check_math
 from .models import ExtractedPack, PackResult, RuleResult
-from .parse import DocumentError, read_pdf_text
+from .parse import DocumentError, read_pdf_pages
 from .rules import check_rules
+from .verification import verification_checks
 from .verify import merge
 
+# How each document was read. The first words are what the UI shows; the part in brackets is the detail.
+LIVE = "Live AI Analysis"
+REGEX_ONLY = "AI unavailable — Regex-only analysis"
+REPLAY = "Recorded AI Response — Not Live"
 SOURCE_LABELS = {
-    "live": "OpenAI + regex cross-check",
-    "replay": "saved OpenAI answer + regex cross-check",
-    "regex": "regex only (offline mode)",
+    "live": f"{LIVE} (OpenAI + regex cross-check)",
+    "replay": f"{REPLAY} (recorded test fixture + regex cross-check)",
+    "regex": f"{REGEX_ONLY} (offline mode selected)",
+    "auto_no_key": f"{REGEX_ONLY} (no OpenAI API key configured)",
+    "live_failed": f"{REGEX_ONLY} (the OpenAI call failed)",
+    "replay_missing": f"{REGEX_ONLY} (no recorded response for this document)",
 }
+
+
+def analysis_kind(source: str | None) -> str:
+    """'live' | 'replay' | 'regex' | 'unknown' from an extraction_source (also understands pre-2.1 labels)."""
+    s = source or ""
+    if s.startswith(LIVE) or s.startswith("OpenAI + regex"):
+        return "live"
+    if s.startswith(REPLAY) or s.startswith("saved OpenAI"):
+        return "replay"
+    if s.startswith(REGEX_ONLY) or s.startswith("regex only"):
+        return "regex"
+    return "unknown"
 
 
 class PackState(TypedDict, total=False):
@@ -41,6 +62,7 @@ class PackState(TypedDict, total=False):
     pdf_path: str
     source_name: str
     raw_text: str
+    pages: list[str] | None
     mode: str
     ask_human: bool
     # produced by the steps
@@ -90,42 +112,48 @@ def parse_node(state: PackState) -> dict:
     if "raw_text" in state:  # text given directly (tests)
         if not state["raw_text"].strip():
             raise DocumentError("Document has no readable text.")
-        return {}
-    return {"raw_text": read_pdf_text(state["pdf_path"])}
+        return {"pages": None}  # no PDF, so no page numbers
+    pages = read_pdf_pages(state["pdf_path"])
+    return {"raw_text": "\n".join(pages), "pages": pages}
 
 
-def resolve_mode(requested: str, text: str, cache_dir: str) -> str:
+def resolve_mode(requested: str) -> str:
+    """Auto = live AI when an OpenAI key is configured, otherwise regex only.
+
+    Auto NEVER uses recorded responses: replay runs only when "replay" is requested explicitly
+    (a developer / testing option).
+    """
     if requested != "auto":
         return requested
-    if os.environ.get("OPENAI_API_KEY"):
-        return "live"
-    return "replay" if extract_llm.has_cached(cache_dir, text) else "regex"
+    return "live" if os.environ.get("OPENAI_API_KEY") else "regex"
 
 
 @step("extract")
 def extract_node(state: PackState) -> dict:
     cfg = load_config()
     text = state["raw_text"]
-    mode = resolve_mode(state.get("mode") or cfg["mode"], text, cfg["cache_dir"])
-    out: dict[str, Any] = {"regex": extract_regex(text), "llm": None, "extraction_source": SOURCE_LABELS[mode]}
+    requested = state.get("mode") or cfg["mode"]
+    mode = resolve_mode(requested)
+    label = "auto_no_key" if requested == "auto" and mode == "regex" else mode
+    out: dict[str, Any] = {"regex": extract_regex(text), "llm": None, "extraction_source": SOURCE_LABELS[label]}
     if mode in ("live", "replay"):
         try:
             if mode == "live":
                 response = extract_llm.call_openai(text, cfg["llm"])
                 extract_llm.save_cached(cfg["cache_dir"], text, response, cfg["llm"]["model"],
                                         state.get("source_name", ""))
-            else:
+            else:  # explicit testing mode: a recorded response for exactly this text, never another document's
                 response = extract_llm.load_cached(cfg["cache_dir"], text)
             out["llm"] = extract_llm.to_extracted(response)
         except Exception as exc:  # LLMUnavailable, network or library errors: keep the regex result
             out["errors"] = [f"LLM extraction unavailable, only one extractor was used: {exc}"]
-            out["extraction_source"] = "regex only (LLM failed)"
+            out["extraction_source"] = SOURCE_LABELS["live_failed" if mode == "live" else "replay_missing"]
     return out
 
 
 @step("verify")
 def verify_node(state: PackState) -> dict:
-    extracted = merge(state.get("llm"), state["regex"], state["raw_text"])
+    extracted = merge(state.get("llm"), state["regex"], state["raw_text"], state.get("pages"))
     out: dict[str, Any] = {"extracted": extracted}
     if all(extracted.get(n).status == "NOT_FOUND" for n in ("item_code", "quantity", "unit_price")):
         # Without an item line, "missing TIN" or "missing penalty" would only mean "this is not a quote".
@@ -147,7 +175,7 @@ def math_node(state: PackState) -> dict:
 @step("check_rules")
 def rules_node(state: PackState) -> dict:
     results = check_rules(state["extracted"], state.get("pr"), state["math_results"], load_config()["rules"])
-    return {"rule_results": results + [state["pr_match"]]}
+    return {"rule_results": results + [state["pr_match"]] + verification_checks(state["extracted"])}
 
 
 @step("decide", always_run=True)
@@ -184,8 +212,39 @@ def report_node(state: PackState) -> dict:
         errors=state.get("errors", []),
         human_decision=state.get("human_decision"),
         seconds=round(time.perf_counter() - state.get("started", time.perf_counter()), 2),
+        financial=financial_summary(ex, state.get("pr")),
     )
     return {"result": result}
+
+
+def _num(f):
+    return Decimal(f.value) if f.ok else None
+
+
+def financial_summary(ex: ExtractedPack, pr: dict | None) -> dict:
+    """Numbers for the Financial Analysis view: what the document says, what the maths gives, what was requested.
+
+    Read-only: computed from this document's verified fields and its purchase-request line; it does not decide.
+    """
+    q, price = _num(ex.get("quantity")), _num(ex.get("unit_price"))
+    out = {
+        "quantity": q, "unit": ex.get("unit").value, "unit_price": price,
+        "line_amount": _num(ex.get("line_amount")), "subtotal": _num(ex.get("subtotal")),
+        "vat_rate": _num(ex.get("vat_rate")), "vat_amount": _num(ex.get("vat_amount")),
+        "total": _num(ex.get("total")), "price_includes_vat": ex.get("price_includes_vat").value,
+        "computed_line_amount": (q * price).quantize(Decimal("0.01")) if q is not None and price is not None else None,
+    }
+    if pr:
+        limit = pr["max_price"] * (1 + load_config()["rules"]["reject_price_over_pct"] / 100)
+        out.update({
+            "pr_number": pr["pr_number"], "pr_item": pr["item"], "requested_quantity": pr["quantity"],
+            "max_unit_price": pr["max_price"], "reject_above_price": limit.quantize(Decimal("0.001")),
+            "price_deviation_pct": ((price - pr["max_price"]) / pr["max_price"] * 100).quantize(Decimal("0.01"))
+            if price is not None else None,
+            "quantity_deviation_pct": ((q - pr["quantity"]) / pr["quantity"] * 100).quantize(Decimal("0.01"))
+            if q is not None else None,
+        })
+    return {k: (str(v) if isinstance(v, Decimal) else v) for k, v in out.items()}
 
 
 def route_after_decide(state: PackState) -> str:
@@ -198,7 +257,7 @@ def checkpoint_serde() -> JsonPlusSerializer:
     """Serializer that is allowed to restore our pydantic models from a checkpoint."""
     return JsonPlusSerializer(allowed_msgpack_modules=[
         ("checker.models", "ExtractedPack"), ("checker.models", "Field"),
-        ("checker.models", "RuleResult"), ("checker.models", "PackResult"),
+        ("checker.models", "RuleResult"), ("checker.models", "PackResult"), ("checker.models", "Candidate"),
     ])
 
 

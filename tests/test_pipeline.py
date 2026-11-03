@@ -35,7 +35,7 @@ def test_offline_mode_scores_10_of_10(row):
 def test_llm_mode_with_agreeing_llm(row, fake_llm):
     fake_llm(lambda text: llm_answer_from(extract_regex(text)))
     result = run_pack(str(DATA / row["file"]), pack_id=row["pack"], mode="live")
-    assert result.extraction_source.startswith("OpenAI")
+    assert result.extraction_source.startswith("Live AI Analysis")
     assert not result.errors
     check(result, row)
 

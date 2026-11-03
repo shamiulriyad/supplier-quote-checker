@@ -7,12 +7,15 @@ from checker.config import load_config
 from service.batch import DocumentQueue, Engine
 
 MODES = {
-    "auto": ("Auto", "OpenAI if an API key is configured, otherwise a saved OpenAI answer, otherwise regex only."),
-    "live": ("Live", "OpenAI extraction on every document, cross-validated by the regex extractor. "
-                     "Answers are saved for replay."),
-    "replay": ("Replay", "Saved OpenAI answers, cross-validated by the regex extractor. No API calls."),
+    "auto": ("Auto", "Live AI analysis (OpenAI) when an API key is configured, otherwise regex-only analysis. "
+                     "Never uses recorded responses."),
+    "live": ("Live", "OpenAI on every document, cross-validated by the regex extractor. Without a key, documents "
+                     "fall back to regex-only analysis and go to a person."),
     "regex": ("Offline", "Regex extractor only. No AI and no network calls."),
+    "replay": ("Replay (testing)", "TESTING ONLY: recorded OpenAI responses for the 10 sample packs. Not live AI; "
+                                   "results are labelled 'Recorded AI Response — Not Live'."),
 }
+PUBLIC_MODES = ["auto", "live", "regex"]  # replay is a developer / testing option, see Settings
 
 
 @st.cache_resource(show_spinner=False)
@@ -41,7 +44,7 @@ def effective_source(mode: str) -> str:
     """What `auto` will actually do right now (mirrors checker.graph.resolve_mode)."""
     if mode != "auto":
         return mode
-    return "live" if api_key_configured() else "replay or regex (per document)"
+    return "live AI" if api_key_configured() else "regex-only (no OpenAI API key)"
 
 
 def external_calls_enabled(mode: str) -> bool:

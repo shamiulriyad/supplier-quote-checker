@@ -27,6 +27,8 @@ def render_sidebar_footer() -> None:
         <div class="si-foot">
           {activity}{reviews}
           <div>Mode <b>{escape(MODES[mode][0])}</b></div>
+          {badge("Recorded AI — not live", "warning") if mode == "replay" else ""}
+          <div>Storage <b>{"Supabase" if engine.persistent else "Local (temporary on Cloud)"}</b></div>
           <div>AI provider <b>OpenAI</b> · <b>{escape(load_config()['llm']['model'])}</b></div>
           <div>API {badge(label, tone)}</div>
           <div>Version <b>{__version__}</b></div>

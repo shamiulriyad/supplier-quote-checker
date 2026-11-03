@@ -26,6 +26,13 @@ STAGE_ICON = {  # stage status -> (glyph, css class, label)
     "waiting": ("Ⅱ", "waiting", "Waiting for human review"), "skipped": ("–", "skipped", "Skipped"),
 }
 OUTCOME_TONE = {"PASS": "success", "FAIL": "error", "UNKNOWN": "warning", "N/A": "neutral"}
+# How a document was read (checker.graph.analysis_kind) -> (label, tone)
+ANALYSIS = {
+    "live": ("Live AI Analysis", "success"),
+    "regex": ("AI unavailable — Regex-only analysis", "warning"),
+    "replay": ("Recorded AI Response — Not Live", "warning"),
+    "unknown": ("Not analysed yet", "neutral"),
+}
 
 CSS = f"""
 <style>
@@ -128,6 +135,13 @@ def status_badge(status: str | None) -> str:
     return badge(label, tone)
 
 
+def analysis_badge(source: str | None) -> str:
+    from checker.graph import analysis_kind
+
+    label, tone = ANALYSIS[analysis_kind(source)]
+    return badge(label, tone)
+
+
 def outcome_badge(outcome: str) -> str:
     return badge(outcome, OUTCOME_TONE.get(outcome, "neutral"))
 
@@ -220,8 +234,8 @@ def explain_error(msg: str | None) -> str | None:
         return ("No OpenAI API key is configured. The document was analysed with the offline (regex) "
                 "extractor only and sent to a person.")
     if "llm extraction unavailable" in m and "no saved llm answer" in m:
-        return ("Replay mode has no saved OpenAI answer for this document. It was analysed with the offline "
-                "(regex) extractor only and sent to a person.")
+        return ("Replay (testing) mode has no recorded AI response for this document, and recorded responses of "
+                "other documents are never reused. It was analysed with the regex extractor only and sent to a person.")
     if "llm extraction unavailable" in m:
         detail = msg.split(":", 1)[-1].strip()
         return (f"AI extraction failed ({detail[:160]}). The document was analysed with the offline (regex) "

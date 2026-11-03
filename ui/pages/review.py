@@ -11,7 +11,7 @@ from service.store import AlreadyReviewed, load_result
 from .. import nav
 from ..components import fmt_value, render_reasons
 from ..state import get_engine
-from ..theme import (badge, decision_badge, empty_state, explain_error, fmt_ago, fmt_dt, kv, page_header,
+from ..theme import (analysis_badge, badge, decision_badge, empty_state, explain_error, fmt_ago, fmt_dt, kv, page_header,
                      section, status_badge)
 
 KEY_FIELDS = [("supplier_name", "Supplier"), ("item_code", "Item"), ("description", "Description"),
@@ -46,7 +46,8 @@ def render_workspace(doc: dict) -> None:
         <div class="si-doc">{escape(doc['filename'])}</div>
         <div class="si-meta">{escape(doc.get('supplier') or 'Supplier not identified')} · waiting for
         {fmt_ago(doc.get('processed_at'))}</div></div>
-        <div>{badge('AI recommendation', 'neutral')} {decision_badge(doc.get('decision'))}</div></div>
+        <div>{analysis_badge(doc.get('extraction_source'))} {badge('AI recommendation', 'neutral')}
+        {decision_badge(doc.get('decision'))}</div></div>
         <div class="si-meta" style="margin-top:6px">The recommendation is the pipeline's output, not a decision.
         The document's pipeline is paused and continues only when you submit a decision.</div></div>""")
 

@@ -131,10 +131,21 @@ def test_document_details_show_all_fields_and_rules(ui):
     frames = [d.value for d in at.dataframe]
     fields = next(f for f in frames if "Extracted value" in f.columns)
     assert len(fields) == 24
-    rules = next(f for f in frames if "Explanation" in f.columns)
-    assert set(rules[rules["Result"] == "FAIL"]["Rule"]) == {"N3", "N6"}
-    assert [t.label for t in at.tabs] == ["Evidence", "Extracted fields", "Rule validation", "Document text",
-                                          "PDF preview", "Processing log"]
+    assert {"Method", "Page", "Verification", "Conflict", "Evidence"} <= set(fields.columns)
+    assert fields.loc[fields["Field"] == "Unit price", "Page"].item() == "1"
+    # Decision tab: the 14 business rules with expected condition and actual value
+    business = next(f for f in frames if "Expected" in f.columns and len(f) == 14)
+    assert set(business[business["Result"] == "FAIL"]["Rule"]) == {"N3", "N6"}
+    assert business.loc[business["Rule"] == "R1", "Expected"].item().startswith("Unit price")
+    assert business.loc[business["Rule"] == "R1", "Actual"].item().startswith("6.40 BDT")
+    gates = next(f for f in frames if "Expected" in f.columns and set(f["Rule"]) == {"V1", "V2"})
+    assert list(gates["Result"]) == ["PASS", "PASS"]
+    financial = next(f for f in frames if "Deviation" in f.columns)
+    assert financial.loc[financial["Item"] == "Unit price (BDT)", "Deviation"].item() == "-1.54%"
+    assert "320,000.00" in financial.loc[financial["Item"] == "Line amount (BDT)", "Purchase request / check"].item()
+    assert [t.label for t in at.tabs] == ["Decision", "Evidence", "Extraction evidence", "Rule validation",
+                                          "Document text", "PDF preview", "Processing log"]
+    assert len(at.get("imgs")) == 1  # page rendered from the stored PDF (file store, not a public URL)
 
 
 def test_overview_metrics_come_from_processed_documents(ui):
