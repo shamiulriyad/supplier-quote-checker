@@ -319,6 +319,13 @@ def _registration(text: str, f: dict) -> None:
             quote = hint_line if hint_line and normalize(hits[0][1]) in normalize(hint_line) else hits[0][1]
             f[name] = pick([("label", v, quote if i == 0 else q) for i, (v, q) in enumerate(hits)],
                            f"{label} numbers", "")
+            continue
+        # a number is written after the label, but it is not a valid TIN/BIN: present, yet unusable
+        label_re = r"\b(?:e-?TIN|TIN)\b" if name == "tin" else r"\bBIN\b"
+        written = re.search(label_re + r"(?:\s*(?:no\.?|number|#))?\s*[:\-]?\s*([\w\-/ ]*?\d[\w\-/]*)", text, re.I)
+        if written and len(re.sub(r"\D", "", written.group(1))) >= 3:
+            f[name] = unclear(None, _line_at(text, written.start()),
+                              f"{label} '{written.group(1).strip()}' is written but is not a valid {label}")
         else:
             f[name] = not_found(f"supplier {label} not given", hint_line)
 
@@ -424,6 +431,12 @@ def _delivery(text: str, clauses: dict, f: dict) -> None:
     if not d:
         f["delivery_days"] = not_found("no delivery terms found")
         return
+    rng = re.search(r"(\d+)\s*(?:-|–|to)\s*(\d+)\s*(working\s+days|business\s+days|days?|weeks?|months?)", d, re.I)
+    if rng:  # "within 20-60 days": the promise is a range, not one date
+        hi, _note = _to_days(int(rng.group(2)), rng.group(3))
+        f["delivery_days"] = unclear(hi, sentence_at(d, rng.start()), f"delivery is a range ({rng.group(1)} to "
+                                     f"{rng.group(2)} {rng.group(3).lower()}), not one promised period")
+        return
     hits = list(_DURATION.finditer(d))
     if not hits:
         f["delivery_days"] = not_found("delivery terms have no period in days or weeks", d)
@@ -457,14 +470,32 @@ def _penalty(text: str, clauses: dict, f: dict) -> None:
         f["penalty_pct"] = unclear(None, clause, "penalty clause has no percentage")
         f["penalty_basis"] = not_found("penalty clause has no percentage", clause)
         return
-    q = sentence_at(clause, m.start())
-    pct = Decimal(m.group(1))
-    if re.search(r"per week|each (full )?week|a week|weekly|per\s+completed\s+week", clause, re.I):
-        f["penalty_pct"] = found(pct, q)
-    elif re.search(r"per day|each day|a day|daily", clause, re.I):
-        f["penalty_pct"] = found(pct * 7, q, f"converted from {pct}% per day")
+    # the rate is the percentage tied to "per week" / "per day", not e.g. a cap stated first ("maximum 10%")
+    gap = r"[^.;%\d]{0,60}?"
+    week = r"(?:per\s+(?:completed\s+)?week|each\s+(?:full\s+)?week|a\s+week|weekly)"
+    day = r"(?:per\s+day|each\s+day|a\s+day|daily)"
+    weekly = {Decimal(x.group(1)): x for x in re.finditer(rf"(\d+(?:\.\d+)?)\s*%{gap}{week}", clause, re.I)}
+    daily = {Decimal(x.group(1)): x for x in re.finditer(rf"(\d+(?:\.\d+)?)\s*%{gap}{day}", clause, re.I)}
+    cap = re.search(r"(?:maximum|max\.?|up to|capped at|not exceed(?:ing)?|limited to)\s+(?:of\s+)?(\d+(?:\.\d+)?)\s*%",
+                    clause, re.I)
+    cap_note = f"capped at {cap.group(1)}%" if cap else None
+    if len(weekly) + len(daily) > 1:
+        rates = ", ".join([f"{v}% per week" for v in weekly] + [f"{v}% per day" for v in daily])
+        first = next(iter((weekly or daily).values()))
+        f["penalty_pct"] = unclear(min([*weekly, *(v * 7 for v in daily)]), sentence_at(clause, first.start()),
+                                   f"several penalty rates are stated ({rates})")
+        m = first
+    elif weekly:
+        pct, m = next(iter(weekly.items()))
+        f["penalty_pct"] = found(pct, sentence_at(clause, m.start()), cap_note)
+    elif daily:
+        pct, m = next(iter(daily.items()))
+        f["penalty_pct"] = found(pct * 7, sentence_at(clause, m.start()),
+                                 "; ".join(filter(None, [f"converted from {pct}% per day", cap_note])))
     else:
-        f["penalty_pct"] = unclear(pct, q, "penalty is not stated per week")
+        f["penalty_pct"] = unclear(Decimal(m.group(1)), sentence_at(clause, m.start()),
+                                   "penalty is not stated per week")
+    q = sentence_at(clause, m.start())
     basis = re.search(r"of (?:the )?(order value|contract value|po value|invoice value|order amount)", clause, re.I)
     f["penalty_basis"] = (
         found(basis.group(1).lower().replace("order amount", "order value"), q) if basis
@@ -494,12 +525,48 @@ def _validity(text: str, clauses: dict, f: dict) -> None:
     f["validity_days"] = not_found("no quotation validity period")
 
 
+MONEY_FIELDS = ("unit_price", "line_amount", "subtotal", "vat_amount", "total")
+# currency marker -> ISO code. "¥" is ambiguous (yen or yuan), so it is not mapped.
+CURRENCY_CODES = [(r"\bBDT\b|\bTk\.?(?=[\s\d)]|$)|\bTaka\b|৳", "BDT"), (r"\bUSD\b|\bUS\$|(?<![\w])\$", "USD"),
+                  (r"\bEUR\b|€", "EUR"), (r"\bGBP\b|£", "GBP"), (r"\bINR\b|₹|\bRs\.?(?=[\s\d])", "INR"),
+                  (r"\bCNY\b|\bRMB\b", "CNY"), (r"\bJPY\b", "JPY"), (r"\bAED\b", "AED"), (r"\bSGD\b", "SGD")]
+_MONEY_LINE = re.compile(r"\b(price|rate|amount|total|subtotal|sub-total|vat|cost|value)\b", re.I)
+_RATE_LINE = re.compile(r"(?:exchange|conversion|currency)\s+rate|\b1\s*(?:[A-Z]{3}|US\$|\$)\s*=", re.I)
+
+
+def _currency(text: str, f: dict) -> None:
+    """The currency the prices are in, read from the price and total lines (not from the terms)."""
+    item_lines = {f[n].quote for n in MONEY_FIELDS if f.get(n) and f[n].quote}
+    readings = []
+    for line in text.splitlines():
+        if not (_MONEY_LINE.search(line) or line.strip() in item_lines):
+            continue
+        if _RATE_LINE.search(line):
+            continue  # "Exchange rate: 1 USD = 100 BDT" names two currencies but is not a price (the company rate is used)
+        for pattern, code in CURRENCY_CODES:
+            if re.search(pattern, line, re.I if code != "INR" else 0):
+                readings.append(("price line", code, line.strip()))
+        if "¥" in line:
+            f["currency"] = unclear(None, line.strip(), "'¥' can mean yen or yuan")
+            return
+    codes = list(dict.fromkeys(code for _m, code, _q in readings))
+    if len(codes) > 1:
+        f["currency"] = unclear(None, readings[0][2], "the price lines use different currencies: " + ", ".join(codes),
+                                DOC_CONFLICT, [Candidate(source="regex: price line", value=c, quote=q)
+                                               for _m, c, q in readings])
+    elif codes:
+        f["currency"] = found(codes[0], readings[0][2])
+    else:
+        f["currency"] = not_found("no currency is written on the price lines")
+
+
 def extract_regex(text: str) -> ExtractedPack:
     f: dict[str, Field] = {}
     clauses = split_clauses(text)
     _header(text, f)
     _items(text, f)
     _totals(text, f)
+    _currency(text, f)
     _registration(text, f)
     _payment(text, clauses, f)
     _delivery(text, clauses, f)
