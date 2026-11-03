@@ -195,8 +195,64 @@ def penalty_size_rule(ex: ExtractedPack, rules: dict) -> RuleResult:
 def check_rules(ex: ExtractedPack, pr: dict | None, math_results: list[RuleResult], rules: dict) -> list[RuleResult]:
     r1, n1 = price_rules(ex, pr, rules)
     r5, n4 = delivery_rules(ex, rules)
-    return [
+    results = [
         r1, advance_rule(ex, rules), penalty_clause_rule(ex), registration_rule(ex), r5,
         n1, quantity_rule(ex, pr, rules), payment_rule(ex, rules), n4, vat_rule(ex, rules),
         math_rule(math_results), validity_rule(ex, rules), penalty_size_rule(ex, rules),
     ]
+    return [annotate(r, ex, pr, rules, math_results) for r in results]
+
+
+# ---------------------------------------------------------------- explainability (does not change outcomes)
+
+def _show(f: Field, unit: str = "") -> str:
+    if f.ok:
+        return f"{f.value}{unit}" + (f" ({f.note})" if f.note and "converted" in f.note else "")
+    if f.status == "NOT_FOUND":
+        return "not in the document"
+    return f"unclear: {f.note or 'could not be verified'}" + (f" (reading {f.value}{unit})" if f.value is not None
+                                                             else "")
+
+
+def annotate(r: RuleResult, ex: ExtractedPack, pr: dict | None, rules: dict,
+             math_results: list[RuleResult]) -> RuleResult:
+    """Add the expected condition and the actual value to a rule result."""
+    g = ex.get
+    mx = pr["max_price"] if pr else None
+    limit = (mx * (1 + rules["reject_price_over_pct"] / 100)).quantize(Decimal("0.001")) if pr else None
+    price = _show(g("unit_price"), " BDT")
+    if r.rule_id in ("R1", "N1") and g("unit_price").ok and pr:
+        price += f" ({_pct_over(Decimal(g('unit_price').value), mx):+}% vs maximum)"
+    days = (f"{g('payment_days_min').value}-{g('payment_days_max').value} days"
+            if g("payment_days_min").value != g("payment_days_max").value else _show(g("payment_days_min"), " days"))
+    if not (g("payment_days_min").ok and g("payment_days_max").ok):
+        days = _show(g("payment_days_min"), " days")
+    vat = ("prices include VAT" if g("price_includes_vat").value is True else _show(g("vat_rate"), "%"))
+    math_actual = "; ".join(f"{m.title}: {m.outcome}" for m in math_results) or "not checked"
+    table = {
+        "R1": (f"Unit price ≤ {limit} BDT (maximum {mx} + {rules['reject_price_over_pct']}%)" if pr
+               else f"Unit price ≤ maximum + {rules['reject_price_over_pct']}%", price),
+        "R2": (f"Advance ≤ {rules['max_advance_pct']}%", _show(g("advance_pct"), "%")),
+        "R3": ("A late-delivery penalty clause is present",
+               "no penalty clause" if g("penalty_pct").status == "NOT_FOUND" else "penalty clause present"
+               if g("penalty_pct").value is not None else _show(g("penalty_pct"))),
+        "R4": ("Supplier TIN and BIN are both given", f"TIN {_show(g('tin'))}; BIN {_show(g('bin'))}"),
+        "R5": (f"Delivery ≤ {rules['max_delivery_days']} days after the purchase order",
+               _show(g("delivery_days"), " days")),
+        "N1": (f"Unit price ≤ maximum {mx} BDT" if pr else "Unit price ≤ maximum", price),
+        "N2": (f"Quantity within ±{rules['qty_tolerance_pct']}% of {pr['quantity']:,} {pr['unit']}" if pr
+               else f"Quantity within ±{rules['qty_tolerance_pct']}% of the requested quantity",
+               _show(g("quantity"), f" {g('unit').value or ''}".rstrip())),
+        "N3": (f"Clear payment terms, {rules['payment_days_min']}-{rules['payment_days_max']} days after delivery",
+               f"advance {_show(g('advance_pct'), '%')}; balance {days}"),
+        "N4": (f"Delivery in less than {rules['review_delivery_from_days']} days "
+               f"({rules['review_delivery_from_days']}-{rules['max_delivery_days']} needs a person)",
+               _show(g("delivery_days"), " days")),
+        "N5": (f"VAT shown separately at {rules['vat_rate_pct']}%", vat),
+        "N6": ("Line amount, subtotal, VAT and total add up", math_actual),
+        "N7": (f"Quotation valid for at least {rules['min_validity_days']} days", _show(g("validity_days"), " days")),
+        "P1": (f"Penalty ≥ {rules['min_penalty_pct_per_week']}% of order value per week",
+               f"{_show(g('penalty_pct'), '% per week')}; basis {_show(g('penalty_basis'))}"),
+    }
+    expected, actual = table.get(r.rule_id, ("", ""))
+    return r.model_copy(update={"expected": expected, "actual": actual})

@@ -32,6 +32,15 @@ def _simple(s: str) -> str:
 
 
 def match_pr(ex: ExtractedPack, pr_lines: dict[str, dict]) -> tuple[dict | None, RuleResult]:
+    pr, result = _match_pr(ex, pr_lines)
+    show = lambda n: str(ex.get(n).value) if ex.get(n).ok else f"{n.replace('_', ' ')} unclear/missing"  # noqa: E731
+    expected = (f"Item {pr['item']}, unit {pr['unit']}, reference {pr['pr_number']}" if pr
+                else "An item of the purchase request, with matching unit and reference")
+    actual = f"item {show('item_code')}, unit {show('unit')}, reference {show('pr_reference')}"
+    return pr, result.model_copy(update={"expected": expected, "actual": actual})
+
+
+def _match_pr(ex: ExtractedPack, pr_lines: dict[str, dict]) -> tuple[dict | None, RuleResult]:
     title = "Quote matches a purchase-request line"
     code = ex.get("item_code")
     if not code.ok:
