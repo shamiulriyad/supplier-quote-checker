@@ -16,6 +16,17 @@ llm:
   timeout_seconds: 60
   max_retries: 2
 
+# Exchange rates set by the company (finance). Prices in another currency are converted to BDT with
+# these rates before the price rules run; the original amounts stay in the report as evidence.
+# A currency that is not listed here is not converted: the document goes to a person.
+# PLACEHOLDER VALUES: replace them with the official company rates and update rates_as_of.
+currency:
+  base: BDT
+  rates_as_of: "2026-11-01"
+  rates:              # 1 unit = N BDT
+    USD: 122.00
+    EUR: 132.00
+
 # Company rules (company-rules.md). Change a number here to change the rule.
 rules:
   reject_price_over_pct: 3          # Reject R1 / Review N1

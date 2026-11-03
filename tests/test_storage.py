@@ -12,6 +12,7 @@ from decimal import Decimal
 import pytest
 
 from checker import extract_llm
+from checker.models import FIELD_KINDS
 from checker.graph import build_graph, checkpoint_serde, initial_state, report_node
 from service.backend import BackendConfigError, DbLLMCache, resolve_settings
 from service.batch import BatchStartError, Engine
@@ -223,7 +224,7 @@ def test_batch_uploads_pdfs_and_persists_results(engine, fake_files):
     result = json.loads(d["result_json"])
     business = [r for r in result["rule_results"] if r["category"] != "verification"]
     gates = [r for r in result["rule_results"] if r["category"] == "verification"]
-    assert len(result["fields"]) == 24 and len(business) == 14 and [g["rule_id"] for g in gates] == ["V1", "V2"]
+    assert len(result["fields"]) == len(FIELD_KINDS) and len(business) == 14 and [g["rule_id"] for g in gates] == ["V1", "V2"]
     assert result["fields"]["unit_price"]["quote"].startswith("A Cotton twill")
     assert len(d["raw_text"]) > 500
     assert engine.read_pdf(d) == PDF01  # preview source
@@ -467,7 +468,7 @@ def test_migration_imports_old_history_idempotently(engine, tmp_path, fake_files
     paused = docs[old_id]
     assert paused["document_id"] == mig.new_document_id(old_id) and paused["status"] == "waiting_review"
     assert paused["batch_id"] == "20261101-100000-abcd" and paused["storage_path"] in storage.objects
-    assert len(json.loads(paused["result_json"])["fields"]) == 24
+    assert len(json.loads(paused["result_json"])["fields"]) == len(FIELD_KINDS)
     assert [e["message"] for e in engine.store.events(document_id=paused["document_id"])] == ["Extracted text"]
 
     again = mig.migrate(engine, old)  # second run changes nothing
