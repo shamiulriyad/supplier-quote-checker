@@ -90,7 +90,7 @@ python evaluate.py --mode live
 # 3. The web app (http://localhost:8501)
 streamlit run app.py
 
-# Tests (95 tests: rules, hallucination checks, pipeline, batch runner, review, UI)
+# Tests (166 tests, no credentials needed)
 python -m pytest -q
 ```
 
@@ -103,14 +103,21 @@ python run.py                     # all packs; writes outputs/results.json and o
 
 ### Modes
 
-| Mode | What reads the document | Needs API key |
-|---|---|---|
-| `live` | OpenAI + regex cross-check. Answers are saved in `cache/llm/`. | yes |
-| `replay` | The saved OpenAI answers + regex cross-check | no |
-| `regex` | Regex extractor only | no |
-| `auto` (default) | `live` if a key is set, else `replay` if a saved answer exists, else `regex` | – |
+| Mode | What reads the document | Shown as | Needs API key |
+|---|---|---|---|
+| `auto` (default) | **Live** if an OpenAI key is set, otherwise **regex only**. Never uses recorded responses. | Live AI Analysis / AI unavailable — Regex-only analysis | – |
+| `live` | A real OpenAI call for every document + regex cross-check. Without a key (or if the call fails) it falls back to regex only and the document goes to a person. | Live AI Analysis | yes |
+| `regex` (Offline) | Regex extractor only, no network | AI unavailable — Regex-only analysis | no |
+| `replay` (**testing only**) | Recorded OpenAI responses + regex cross-check. Only when chosen explicitly: `--mode replay`, or Settings → *Developer / testing options*. | Recorded AI Response — Not Live | no |
 
-Run `python evaluate.py --mode live` once and commit `cache/llm/`. After that, anyone can reproduce the LLM results with `--mode replay` without a key.
+Every result records how it was made (`extraction_source`), and the UI shows it as a badge on the monitor,
+the document details and the review workspace, so a recorded response is never presented as fresh AI analysis.
+
+Recordings are the answers your own earlier live runs saved (Supabase `llm_cache`, or `cache/llm/` locally).
+No recorded answers ship with the repository, and recordings are git-ignored. A recording is matched by the
+exact document text (and prompt version), so it can never be used for a different PDF; a document without one
+gets regex-only analysis. Every pipeline step after extraction (quote verification against the PDF, LLM vs
+regex cross-check, maths, the 14 rules, the decision) runs again in every mode. Auto mode never reads recordings.
 
 ## The web app
 
@@ -124,7 +131,7 @@ Run `python evaluate.py --mode live` once and commit `cache/llm/`. After that, a
 | Validation Results | Rule matrix (documents × rules) and rule-failure chart per batch. |
 | Human Review | Documents the system would not decide. Approve/Reject with a reason; this resumes the paused LangGraph run. |
 | Processing History | Past batches and documents, filterable by date, supplier, decision, mode and status. |
-| Settings | Mode (Auto / Live / Replay / Offline), OpenAI model and connection test, rule thresholds, storage. |
+| Settings | Mode (Auto / Live / Offline; Replay only under *Developer / testing options*), OpenAI model and connection test, rule thresholds, storage. |
 
 ### How the live monitor works
 
@@ -146,35 +153,129 @@ Run `python evaluate.py --mode live` once and commit `cache/llm/`. After that, a
 - A *Needs review* document pauses at the `human_review` node (`interrupt()`). Submitting a decision calls
   `Command(resume={"decision", "comment"})` on that document's own thread. A database claim blocks double
   submissions.
-- Checkpoints, history and events are stored in SQLite under `runtime/` (not in git). A document waiting for
-  review can still be reviewed after the app restarts. Work that was running when the app stopped is marked
-  *interrupted*.
+- History, events, step checkpoints, the LangGraph state and the original PDFs are stored in **Supabase**
+  when it is configured (see below), otherwise locally under `runtime/` (not in git). Either way a document
+  waiting for review can still be reviewed after the app restarts. Work that was running when the app stopped is
+  marked *interrupted* and can be re-queued from Processing History (its PDF is in storage).
+
+## Persistent storage with Supabase
+
+Without configuration the app stores everything locally (`runtime/`), which Streamlit Community Cloud deletes on
+every reboot. With Supabase, history and PDFs are permanent.
+
+| What | Where (Supabase) | Local fallback |
+|---|---|---|
+| Batches, documents (all 24 fields, rules, quotes in `result_json`), events, step checkpoints, LLM cache | PostgreSQL tables `batches`, `documents`, `document_events`, `pipeline_checkpoints`, `llm_cache` | `runtime/app.db` (SQLite, same SQL) |
+| Paused review pipelines (LangGraph state) | PostgreSQL, LangGraph `PostgresSaver` tables | `runtime/graph-checkpoints.db` |
+| Original PDFs | Private Storage bucket `supplier-documents`, path `pdfs/<sha256[:2]>/<sha256>.pdf` | `runtime/files/` |
+
+### 1. Create the project
+On [supabase.com](https://supabase.com) → **New project**. Note the database password.
+
+### 2. PostgreSQL connection
+**Project Settings → Database → Connection string → Session pooler** (URI), with your database password filled in. If the password contains special characters (`@ # ! * : /` …), percent-encode them (for example `@` → `%40`), or the URL is read wrongly.
+Use the session pooler: the direct connection is IPv6-only, and Streamlit Cloud needs IPv4. The app sends no
+prepared statements, so the transaction pooler (port 6543) works too.
+
+### 3. Storage bucket
+Nothing to do: the app (and `tools/supabase_setup.py`) creates the private bucket `supplier-documents`
+(PDF only, 10 MB limit) if it is missing, and refuses to run if the bucket is public. To create it by hand, run
+[supabase/migrations/20261103000100_storage_bucket.sql](supabase/migrations/20261103000100_storage_bucket.sql)
+or create a **private** bucket in the dashboard.
+
+### 4. SQL migrations
+The app applies [supabase/migrations/20261103000000_initial_schema.sql](supabase/migrations/20261103000000_initial_schema.sql)
+on start (idempotent) and creates LangGraph's checkpoint tables. To do it up front and run a self-test:
+
+```bash
+python tools/supabase_setup.py   # migrations + checkpoint tables + bucket check + upload/download/delete test
+# or with the Supabase CLI:  supabase link --project-ref <ref>  then  supabase db push
+```
+
+### 5. Environment variables
+```env
+SUPABASE_URL=https://<ref>.supabase.co          # Project Settings -> API
+SUPABASE_KEY=<service_role key>                 # server side only
+SUPABASE_DB_URL=postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres
+SUPABASE_STORAGE_BUCKET=supplier-documents      # optional
+```
+Set all of the first three, or none. If only some are set, the app stops with a message naming what is
+missing; it never silently falls back to local storage.
+
+### 6. Local development
+`cp .env.example .env`, fill in the values, `streamlit run app.py`. **Settings → Test storage connection**
+checks the database and the bucket. The sidebar shows which storage is in use.
+
+### 7. Streamlit Community Cloud
+In the app's **Settings → Secrets**:
+```toml
+OPENAI_API_KEY = "sk-..."
+SUPABASE_URL = "https://<ref>.supabase.co"
+SUPABASE_KEY = "<service_role key>"
+SUPABASE_DB_URL = "postgresql://postgres.<ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres"
+SUPABASE_STORAGE_BUCKET = "supplier-documents"
+```
+Reboot the app. History, reviews and PDFs now survive restarts and redeploys.
+
+### 8. Migrate existing local data
+```bash
+python tools/migrate_local_history.py --dry-run   # show what would be imported
+python tools/migrate_local_history.py             # from runtime/history.db, checkpoints.db and the PDFs
+```
+Imports the old local history into the configured backend. Batch ids, SHA-256 hashes, result JSON, text,
+events and human decisions are kept, PDFs are uploaded, and paused reviews are copied so they can still be
+reviewed. It is idempotent (old ids map to fixed UUIDs; imported documents are skipped), opens the source
+read-only, never deletes local files, and writes `migration-report-<time>.json` next to the source.
+
+### 9. Security
+- The bucket is **private**, and the app never creates public or signed URLs: previews are downloaded and
+  rendered on the server.
+- `SUPABASE_KEY` is the service role key. It lives only in `.env` / Streamlit Secrets, on the server
+  (Streamlit sends browsers rendered pages only) and is never shown in the app.
+- Row Level Security is **enabled with no policies** on every table, so Supabase's public API roles can read
+  nothing. The app connects server-side.
+- **There is no login.** Everyone who can open the app sees the same history. Add Supabase Auth and per-user
+  RLS policies before storing real supplier documents.
+- Uploads are validated (PDF header, at most 10 MB, must open as a PDF). File names are reduced to a plain
+  name and never used as storage paths.
+- `.env`, `.streamlit/secrets.toml`, `runtime/` and `cache/llm/` are git-ignored: no credentials, extracted
+  text or new LLM answers reach git.
+
+### 10. Troubleshooting
+| Symptom | Fix |
+|---|---|
+| "Supabase is only partly configured" | Set all of `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_DB_URL`, or remove all three. |
+| "Cannot connect to Supabase PostgreSQL", or a timeout on Streamlit Cloud | Use the **Session pooler** connection string (IPv4), not the direct one; check the password. |
+| "Bucket … is PUBLIC" | Dashboard → Storage → the bucket → make it private. |
+| Error when starting a batch | Nothing was saved and the queue is kept. Check that the key is the service role key, then press Start again. |
+| "N results could not be saved yet" | The database dropped mid-batch; results are kept in memory. Press **Retry saving** once it is back. |
+| Processing is slow with Supabase (seconds per document even offline) | Every document needs a few database round trips. Put the Supabase project in a region close to where the app runs (Streamlit Community Cloud runs in the US). |
+| Clear History reports files not deleted | Those documents stay marked for deletion; run Clear History again. |
 
 ## Deploy on Streamlit Community Cloud
 
 1. Push this repo to GitHub (public).
 2. On [share.streamlit.io](https://share.streamlit.io): **Create app** → pick the repo, branch `main`, main file `app.py`. Under **Advanced settings** pick Python 3.12.
-3. In **Secrets** add:
-   ```toml
-   OPENAI_API_KEY = "sk-..."
-   ```
-4. Deploy. The key stays in Streamlit's secrets; it is never in the code.
+3. In **Secrets** add `OPENAI_API_KEY`, plus the Supabase values for permanent storage
+   (*Persistent storage with Supabase*, step 7). Without Supabase the app still works, but history is lost on reboot.
+4. Deploy. The keys stay in Streamlit's secrets; they are never in the code.
 
 ## Project structure
 
 ```
 checker/          business logic: the pipeline (one file per step) + graph.py (LangGraph wiring)
-service/          no Streamlit: progress events, queue, background batch runner, SQLite history
+service/          no Streamlit: progress events, queue, batch runner, history store, database + file storage
 ui/               Streamlit: theme, sidebar, shared components, charts, one module per page (ui/pages/)
 app.py            entry point: page setup and navigation
 data/             the 10 sample packs, purchase request, company rules
-cache/llm/        saved OpenAI answers (for replay mode)
-runtime/          created at run time: history.db, checkpoints.db, uploads/ (not in git)
+supabase/         SQL migrations (schema, RLS, private bucket)
+tools/            supabase_setup.py, migrate_local_history.py
+cache/llm/        new OpenAI answers when running locally (not in git)
+runtime/          local storage: app.db, graph-checkpoints.db, files/, uploads/ staging (not in git)
 tests/            expected.csv (answer key) + pytest suite
 run.py            command line runner
 evaluate.py       score against tests/expected.csv
 config.yaml       rule thresholds, model, mode
-docs/             architecture audit
 ```
 
 ## Assumptions (where the rules are not explicit)
@@ -191,4 +292,4 @@ docs/             architecture audit
 
 ## Limitations
 
-See [NOTE.md](NOTE.md). In short: text PDFs only (no OCR), and one item per quotation. The regex extractor is tuned to this document layout. History lives in a local SQLite file: on Streamlit Community Cloud it is lost when the app is rebooted, and it is shared by everyone using the same deployment (there is no login). Only one batch runs at a time per server.
+See [NOTE.md](NOTE.md). In short: text PDFs only (no OCR), and one item per quotation. The regex extractor is tuned to this document layout. Without Supabase, history lives in local files that Streamlit Community Cloud deletes on reboot. There is no login: everyone using a deployment shares the same history. Only one batch runs at a time per server.
