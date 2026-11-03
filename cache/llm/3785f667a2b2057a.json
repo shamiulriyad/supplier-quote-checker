@@ -1,0 +1,152 @@
+{
+  "document": "supplier-pack-07.pdf",
+  "model": "gpt-4o-mini",
+  "prompt_version": "v2",
+  "created": "2026-11-03T03:43:46+00:00",
+  "response": {
+    "supplier_name": {
+      "value": "Rupsha Zipper Factory",
+      "quote": "Rupsha Zipper Factory",
+      "status": "FOUND",
+      "note": null
+    },
+    "quotation_no": {
+      "value": "QT-2026-907",
+      "quote": "Quotation no. QT-2026-907",
+      "status": "FOUND",
+      "note": null
+    },
+    "quote_date": {
+      "value": "2026-10-20",
+      "quote": "Date 2026-10-20",
+      "status": "FOUND",
+      "note": null
+    },
+    "pr_reference": {
+      "value": "PR-2026-114",
+      "quote": "Reference PR-2026-114",
+      "status": "FOUND",
+      "note": null
+    },
+    "item_code": {
+      "value": "B",
+      "quote": "B Metal zipper, 18 cm 16,500 piece 35.00 577,500.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "description": {
+      "value": "Metal zipper, 18 cm",
+      "quote": "Metal zipper, 18 cm",
+      "status": "FOUND",
+      "note": null
+    },
+    "unit": {
+      "value": "piece",
+      "quote": "piece",
+      "status": "FOUND",
+      "note": null
+    },
+    "quantity": {
+      "value": "16500",
+      "quote": "16,500",
+      "status": "FOUND",
+      "note": null
+    },
+    "unit_price": {
+      "value": "35.00",
+      "quote": "35.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "price_includes_vat": {
+      "value": "no",
+      "quote": "VAT 15% 86,625.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "line_amount": {
+      "value": "577500.00",
+      "quote": "577,500.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "subtotal": {
+      "value": "577500.00",
+      "quote": "Subtotal 577,500.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "vat_rate": {
+      "value": "15",
+      "quote": "VAT 15% 86,625.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "vat_amount": {
+      "value": "86625.00",
+      "quote": "86,625.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "total": {
+      "value": "664125.00",
+      "quote": "Total 664,125.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "tin": {
+      "value": "107458073391",
+      "quote": "Supplier TIN: 107458073391",
+      "status": "FOUND",
+      "note": null
+    },
+    "bin": {
+      "value": "000770741-0101",
+      "quote": "BIN: 000770741-0101",
+      "status": "FOUND",
+      "note": null
+    },
+    "advance_pct": {
+      "value": "0",
+      "quote": "No advance payment required.",
+      "status": "FOUND",
+      "note": null
+    },
+    "payment_days_min": {
+      "value": "45",
+      "quote": "Payment within 45 days of delivery.",
+      "status": "FOUND",
+      "note": null
+    },
+    "payment_days_max": {
+      "value": "45",
+      "quote": "Payment within 45 days of delivery.",
+      "status": "FOUND",
+      "note": null
+    },
+    "delivery_days": {
+      "value": "22 days",
+      "quote": "Delivery within 22 days of PO.",
+      "status": "FOUND",
+      "note": null
+    },
+    "penalty_pct": {
+      "value": "0.5",
+      "quote": "Late delivery penalty: 0.5% of order value per week.",
+      "status": "FOUND",
+      "note": null
+    },
+    "penalty_basis": {
+      "value": "order value",
+      "quote": "0.5% of order value",
+      "status": "FOUND",
+      "note": null
+    },
+    "validity_days": {
+      "value": "35 days",
+      "quote": "this quotation is valid for 35 days from the date above.",
+      "status": "FOUND",
+      "note": null
+    }
+  }
+}

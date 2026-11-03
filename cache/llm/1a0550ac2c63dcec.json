@@ -1,0 +1,152 @@
+{
+  "document": "supplier-pack-09.pdf",
+  "model": "gpt-4o-mini",
+  "prompt_version": "v2",
+  "created": "2026-11-03T03:43:58+00:00",
+  "response": {
+    "supplier_name": {
+      "value": "Dhaleshwari Poly Pack",
+      "quote": "Dhaleshwari Poly Pack",
+      "status": "FOUND",
+      "note": null
+    },
+    "quotation_no": {
+      "value": "QT-2026-909",
+      "quote": "Quotation no. QT-2026-909",
+      "status": "FOUND",
+      "note": null
+    },
+    "quote_date": {
+      "value": "2026-10-22",
+      "quote": "Date 2026-10-22",
+      "status": "FOUND",
+      "note": null
+    },
+    "pr_reference": {
+      "value": "PR-2026-114",
+      "quote": "Reference PR-2026-114",
+      "status": "FOUND",
+      "note": null
+    },
+    "item_code": {
+      "value": "D",
+      "quote": "D Poly bag, 30 x 40 cm 50,000 piece 6.40 322,000.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "description": {
+      "value": "Poly bag, 30 x 40 cm",
+      "quote": "D Poly bag, 30 x 40 cm",
+      "status": "FOUND",
+      "note": null
+    },
+    "unit": {
+      "value": "piece",
+      "quote": "50,000 piece",
+      "status": "FOUND",
+      "note": null
+    },
+    "quantity": {
+      "value": "50000",
+      "quote": "50,000 piece",
+      "status": "FOUND",
+      "note": null
+    },
+    "unit_price": {
+      "value": "6.40",
+      "quote": "6.40",
+      "status": "FOUND",
+      "note": null
+    },
+    "price_includes_vat": {
+      "value": "no",
+      "quote": "VAT 15% 48,300.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "line_amount": {
+      "value": "322000",
+      "quote": "322,000.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "subtotal": {
+      "value": "322000",
+      "quote": "Subtotal 322,000.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "vat_rate": {
+      "value": "15",
+      "quote": "VAT 15% 48,300.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "vat_amount": {
+      "value": "48300",
+      "quote": "48,300.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "total": {
+      "value": "370300",
+      "quote": "Total 370,300.00",
+      "status": "FOUND",
+      "note": null
+    },
+    "tin": {
+      "value": "109458093391",
+      "quote": "Supplier TIN: 109458093391",
+      "status": "FOUND",
+      "note": null
+    },
+    "bin": {
+      "value": "000970941-0101",
+      "quote": "BIN: 000970941-0101",
+      "status": "FOUND",
+      "note": null
+    },
+    "advance_pct": {
+      "value": "5",
+      "quote": "5% advance payable with the purchase order.",
+      "status": "FOUND",
+      "note": null
+    },
+    "payment_days_min": {
+      "value": "30",
+      "quote": "Payment within 30 to 90 days as agreed by both parties.",
+      "status": "FOUND",
+      "note": null
+    },
+    "payment_days_max": {
+      "value": "90",
+      "quote": "Payment within 30 to 90 days as agreed by both parties.",
+      "status": "FOUND",
+      "note": null
+    },
+    "delivery_days": {
+      "value": "4 weeks",
+      "quote": "Delivery within 4 weeks of PO.",
+      "status": "FOUND",
+      "note": null
+    },
+    "penalty_pct": {
+      "value": "0.5",
+      "quote": "Late delivery penalty of 0.5% of order value per week.",
+      "status": "FOUND",
+      "note": null
+    },
+    "penalty_basis": {
+      "value": "order value",
+      "quote": "Late delivery penalty of 0.5% of order value per week.",
+      "status": "FOUND",
+      "note": null
+    },
+    "validity_days": {
+      "value": "30 days",
+      "quote": "This quotation is valid for 30 days from the date above.",
+      "status": "FOUND",
+      "note": null
+    }
+  }
+}
