@@ -90,7 +90,7 @@ python evaluate.py --mode live
 # 3. The web app (http://localhost:8501)
 streamlit run app.py
 
-# Tests (166 tests, no credentials needed)
+# Tests (200 tests, no credentials needed)
 python -m pytest -q
 ```
 
@@ -277,6 +277,12 @@ run.py            command line runner
 evaluate.py       score against tests/expected.csv
 config.yaml       rule thresholds, model, mode
 ```
+
+## Currency
+Prices in another currency (USD, EUR, ...) are converted to BDT with the company's fixed rate from
+`config.yaml` before the price rules run, and the report shows the quoted amount, the rate and the BDT value.
+A currency with no company rate, or mixed currencies, goes to a person. **Replace the placeholder rates with
+the official company rates** (`currency.rates`, `currency.rates_as_of`).
 
 ## Assumptions (where the rules are not explicit)
 

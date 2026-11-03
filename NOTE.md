@@ -23,6 +23,16 @@ Python code decides. Anything that cannot be verified goes to a person, who deci
    Conflicting values are **never silently replaced**: the field becomes UNCLEAR and all candidates (source,
    value, quote) are stored. Nothing is invented: missing stays missing.
 
+## Currency
+The currency is read from the price and total lines (BDT/Tk/Taka/৳, USD/$, EUR/€, ...) as its own field, with
+evidence. Prices in another currency are **converted to BDT with the company's fixed rate** from
+`config.yaml` (`currency.rates`, with `rates_as_of`) before the price rules run; the rate never comes from the
+supplier's document or the internet. The report shows the quoted amount, the rate, its date and the BDT value
+(e.g. "575.84 BDT, converted from USD 4.72 at 122.00 BDT per USD"). A currency without a company rate, two
+different currencies on the price lines, or an ambiguous sign (¥) is not converted: a person decides. If no
+currency is written at all, amounts are taken as BDT and the report says so.
+**The rates in `config.yaml` are placeholders until finance sets the official ones.**
+
 ## Evidence for every field
 Stored per field in the result (and in Supabase): value, extraction method (Regex / LLM / LLM + Regex),
 the exact quote, the **PDF page** (found by searching the quote in each page's text; empty if it is not on
@@ -52,12 +62,14 @@ page, verification, conflict and quote; selecting a field shows all candidate re
 ## Test results (actual runs)
 | Suite | Result |
 |---|---|
-| All local tests (`python -m pytest tests --ignore=tests/integration`) | **186 passed** |
-| …of which in a fresh clone (demo tests are git-ignored) | 166 |
+| All local tests (`python -m pytest tests --ignore=tests/integration`) | **220 passed** |
+| …of which in a fresh clone (demo tests are git-ignored) | 200 |
 | Original 10 sample packs, offline (`evaluate.py`) | **10/10** decision + reason |
 | 20 generated demo packs, offline | **20/20** |
 | Unseen layouts (`tests/test_unseen_layouts.py`, 9 PDFs + text variants) | 28 passed |
 | Independence (`tests/test_independence.py`) | 4 passed |
+| Edge cases from exploratory testing (`tests/test_edge_cases.py`) | 21 passed |
+| Currency conversion (`tests/test_currency.py`) | 13 passed |
 
 Before/after on the 30 original documents: decisions and fields are identical except demo-17 ("different
 wording"), where "Net 45 days from invoice" and "lead time 3 weeks" are now read (still Needs review, now with
@@ -68,7 +80,7 @@ two pages with page numbers, duplicate totals, conflicting prices, missing numbe
 "2O5.00", ambiguous date, scanned PDF, lakh numbers, wording variants) · live mode with a stubbed OpenAI
 (agreement, disagreement, an LLM that lies about delivery days cannot change the outcome) · replay mode only
 when chosen · a tampered stored decision is never reused · processing reads nothing from the history store ·
-uploads in one batch are decided independently.
+uploads in one batch are decided independently · edge cases: prices in another currency (USD), a penalty cap written before the weekly rate, delivery as a range, a malformed TIN, discount lines, wrong PR reference or unit, zero price, wrong VAT amount, advance as an amount, conflicting supplier or quotation numbers, payment on delivery, text telling the AI to approve.
 
 **Partially tested:**
 - Live mode with the real OpenAI API: 10/10 twice (~7 s per pack) **before** this extraction change; after it,
@@ -85,6 +97,10 @@ uploads in one batch are decided independently.
 - Payment and delivery periods must say what they count from (delivery / purchase order); otherwise a person
   checks. This is deliberate but adds manual reviews.
 - Ambiguous rules (penalty below 0.5 %, VAT-inclusive prices) use the assumptions listed in the README.
+- No expiry check: a quotation dated long ago is not flagged, because the company rules have no such rule.
+  (Should one be added, it belongs in `config.yaml` + `checker/rules.py` as a new rule.)
+- Exchange rates are fixed company values; they must be kept up to date by finance (placeholders now).
+- The LLM prompt changed (currency field, prompt v3): answers recorded with the old prompt are not reused.
 - No login: everyone on one deployment shares the history.
 
 ## Deployment
