@@ -15,6 +15,8 @@ def load_config(path: str | None = None) -> dict:
         cfg = yaml.safe_load(fh)
     cfg["rules"] = {k: Decimal(str(v)) for k, v in cfg["rules"].items()}
     cfg["llm"]["model"] = os.environ.get("OPENAI_MODEL", cfg["llm"]["model"])
-    for key in ("purchase_request", "documents_dir", "cache_dir"):
+    for key in ("purchase_request", "documents_dir", "cache_dir", "runtime_dir"):
         cfg[key] = str(ROOT / cfg[key])
+    if os.environ.get("SQC_RUNTIME_DIR"):  # tests / alternative deployments
+        cfg["runtime_dir"] = os.environ["SQC_RUNTIME_DIR"]
     return cfg

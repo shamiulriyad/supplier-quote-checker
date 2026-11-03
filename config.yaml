@@ -2,6 +2,7 @@
 purchase_request: data/purchase-request.csv
 documents_dir: data
 cache_dir: cache/llm
+runtime_dir: runtime        # history database, review checkpoints, uploaded PDFs (not in git)
 
 # auto   = use OpenAI if OPENAI_API_KEY is set, else saved LLM answers (replay), else regex only
 # live   = always call OpenAI (and save the answer to cache_dir)
