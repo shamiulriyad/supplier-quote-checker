@@ -194,7 +194,16 @@ def route_after_decide(state: PackState) -> str:
     return "report"
 
 
-def build_graph(with_human_review: bool = False):
+def checkpoint_serde() -> JsonPlusSerializer:
+    """Serializer that is allowed to restore our pydantic models from a checkpoint."""
+    return JsonPlusSerializer(allowed_msgpack_modules=[
+        ("checker.models", "ExtractedPack"), ("checker.models", "Field"),
+        ("checker.models", "RuleResult"), ("checker.models", "PackResult"),
+    ])
+
+
+def build_graph(with_human_review: bool = False, checkpointer=None):
+    """Compile the pipeline. Human review needs a checkpointer (in-memory unless one is given)."""
     g = StateGraph(PackState)
     for name, fn in (("parse", parse_node), ("extract", extract_node), ("verify", verify_node),
                      ("match_pr", match_node), ("check_math", math_node), ("check_rules", rules_node),
@@ -210,11 +219,7 @@ def build_graph(with_human_review: bool = False):
 
     if not with_human_review:
         return g.compile()
-    serde = JsonPlusSerializer(allowed_msgpack_modules=[
-        ("checker.models", "ExtractedPack"), ("checker.models", "Field"),
-        ("checker.models", "RuleResult"), ("checker.models", "PackResult"),
-    ])
-    return g.compile(checkpointer=InMemorySaver(serde=serde))
+    return g.compile(checkpointer=checkpointer or InMemorySaver(serde=checkpoint_serde()))
 
 
 def initial_state(pdf_path: str | None = None, *, raw_text: str | None = None, pack_id: str = "",
