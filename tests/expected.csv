@@ -1,0 +1,11 @@
+pack,file,expected_decision,expected_rules,why
+01,supplier-pack-01.pdf,APPROVE,,All rules pass
+02,supplier-pack-02.pdf,APPROVE,,All rules pass (payment and validity exactly 30 days)
+03,supplier-pack-03.pdf,REJECT,R1,Price 229 vs max 210 (+9.05%)
+04,supplier-pack-04.pdf,NEEDS_REVIEW,N1,Price 6.65 vs max 6.50 (+2.31%)
+05,supplier-pack-05.pdf,REJECT,R2,40% advance (wording duplicated)
+06,supplier-pack-06.pdf,REJECT,R3,No late-delivery penalty clause
+07,supplier-pack-07.pdf,NEEDS_REVIEW,N2,Quantity 16500 vs 20000 (-17.5%)
+08,supplier-pack-08.pdf,REJECT,R4,TIN/BIN missing ("available on request")
+09,supplier-pack-09.pdf,NEEDS_REVIEW,N3;N6,Subtotal wrong (322000 vs 320000) and payment 30 to 90 days as agreed
+10,supplier-pack-10.pdf,REJECT,R5;N5,Delivery 60 days; VAT included not separate
