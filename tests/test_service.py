@@ -3,6 +3,7 @@ import threading
 
 import pytest
 
+from checker.models import FIELD_KINDS
 from service.batch import Engine, ReviewExpired, validate_pdf
 from service.progress import STAGE_NAMES
 from service.store import AlreadyReviewed
@@ -78,7 +79,7 @@ def test_progress_events_follow_the_real_graph(engine):
     assert started == ["parse", "extract", "verify", "match_pr", "check_math", "check_rules", "decide", "report"]
     finished = {e.stage: e for e in events if e.status != "running"}
     assert finished["parse"].metadata["characters"] > 500
-    assert finished["verify"].metadata["found"] == 24
+    assert finished["verify"].metadata["found"] == len(FIELD_KINDS)
     assert finished["decide"].metadata["decision"] == "APPROVE"
     assert finished["human_review"].status == "skipped"  # not needed for an Approve
     assert all(finished[s].duration_ms is not None for s in STAGE_NAMES if s != "human_review")

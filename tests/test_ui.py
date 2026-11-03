@@ -5,6 +5,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from checker.config import load_config
+from checker.models import FIELD_KINDS
 
 from .conftest import DATA
 
@@ -130,7 +131,7 @@ def test_document_details_show_all_fields_and_rules(ui):
     assert not at.exception
     frames = [d.value for d in at.dataframe]
     fields = next(f for f in frames if "Extracted value" in f.columns)
-    assert len(fields) == 24
+    assert len(fields) == len(FIELD_KINDS)
     assert {"Method", "Page", "Verification", "Conflict", "Evidence"} <= set(fields.columns)
     assert fields.loc[fields["Field"] == "Unit price", "Page"].item() == "1"
     # Decision tab: the 14 business rules with expected condition and actual value
