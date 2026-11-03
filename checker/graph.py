@@ -1,0 +1,241 @@
+"""The fixed pipeline, wired with LangGraph.
+
+parse -> extract -> verify -> match_pr -> check_math -> check_rules -> decide -> [human_review] -> report
+
+Every step does one job and writes its result into the shared state. If a step crashes the
+error is recorded, the remaining steps are skipped and the pack goes to a person.
+"""
+import operator
+import os
+import time
+from functools import lru_cache, wraps
+from pathlib import Path
+from typing import Annotated, Any, TypedDict
+
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+from langgraph.graph import END, START, StateGraph
+from langgraph.types import interrupt
+
+from . import extract_llm
+from .config import load_config
+from .decide import decide
+from .extract_regex import extract_regex
+from .match import load_purchase_request, match_pr
+from .math_check import check_math
+from .models import ExtractedPack, PackResult, RuleResult
+from .parse import DocumentError, read_pdf_text
+from .rules import check_rules
+from .verify import merge
+
+SOURCE_LABELS = {
+    "live": "OpenAI + regex cross-check",
+    "replay": "saved OpenAI answer + regex cross-check",
+    "regex": "regex only (offline mode)",
+}
+
+
+class PackState(TypedDict, total=False):
+    # input
+    pack_id: str
+    pdf_path: str
+    source_name: str
+    raw_text: str
+    mode: str
+    ask_human: bool
+    # produced by the steps
+    regex: ExtractedPack
+    llm: ExtractedPack | None
+    extraction_source: str
+    extracted: ExtractedPack
+    pr: dict | None
+    pr_match: RuleResult
+    math_results: list[RuleResult]
+    rule_results: list[RuleResult]
+    decision: str
+    reasons: list[RuleResult]
+    human_decision: dict | None
+    result: PackResult
+    fatal: bool
+    errors: Annotated[list[str], operator.add]
+    trace: Annotated[list[str], operator.add]
+    started: float
+
+
+@lru_cache
+def _purchase_request(path: str) -> dict:
+    return load_purchase_request(path)
+
+
+def step(name: str, always_run: bool = False):
+    """Wrap a node: skip after a fatal error, catch exceptions, record timing."""
+    def deco(fn):
+        @wraps(fn)
+        def node(state: PackState) -> dict:
+            if state.get("fatal") and not always_run:
+                return {"trace": [f"{name}: skipped (earlier step failed)"]}
+            t0 = time.perf_counter()
+            try:
+                out = fn(state) or {}
+            except Exception as exc:  # never let one bad document crash the run
+                out = {"errors": [f"{name} step failed: {exc}"], "fatal": True}
+            out["trace"] = out.get("trace", []) + [f"{name}: {(time.perf_counter() - t0) * 1000:.0f} ms"]
+            return out
+        return node
+    return deco
+
+
+@step("parse")
+def parse_node(state: PackState) -> dict:
+    if "raw_text" in state:  # text given directly (tests)
+        if not state["raw_text"].strip():
+            raise DocumentError("Document has no readable text.")
+        return {}
+    return {"raw_text": read_pdf_text(state["pdf_path"])}
+
+
+def resolve_mode(requested: str, text: str, cache_dir: str) -> str:
+    if requested != "auto":
+        return requested
+    if os.environ.get("OPENAI_API_KEY"):
+        return "live"
+    return "replay" if extract_llm.has_cached(cache_dir, text) else "regex"
+
+
+@step("extract")
+def extract_node(state: PackState) -> dict:
+    cfg = load_config()
+    text = state["raw_text"]
+    mode = resolve_mode(state.get("mode") or cfg["mode"], text, cfg["cache_dir"])
+    out: dict[str, Any] = {"regex": extract_regex(text), "llm": None, "extraction_source": SOURCE_LABELS[mode]}
+    if mode in ("live", "replay"):
+        try:
+            if mode == "live":
+                response = extract_llm.call_openai(text, cfg["llm"])
+                extract_llm.save_cached(cfg["cache_dir"], text, response, cfg["llm"]["model"],
+                                        state.get("source_name", ""))
+            else:
+                response = extract_llm.load_cached(cfg["cache_dir"], text)
+            out["llm"] = extract_llm.to_extracted(response)
+        except Exception as exc:  # LLMUnavailable, network or library errors: keep the regex result
+            out["errors"] = [f"LLM extraction unavailable, only one extractor was used: {exc}"]
+            out["extraction_source"] = "regex only (LLM failed)"
+    return out
+
+
+@step("verify")
+def verify_node(state: PackState) -> dict:
+    extracted = merge(state.get("llm"), state["regex"], state["raw_text"])
+    out: dict[str, Any] = {"extracted": extracted}
+    if all(extracted.get(n).status == "NOT_FOUND" for n in ("item_code", "quantity", "unit_price")):
+        # Without an item line, "missing TIN" or "missing penalty" would only mean "this is not a quote".
+        out["errors"] = ["Document does not look like a supplier quotation (no item, quantity or price found)."]
+    return out
+
+
+@step("match_pr")
+def match_node(state: PackState) -> dict:
+    pr, result = match_pr(state["extracted"], _purchase_request(load_config()["purchase_request"]))
+    return {"pr": pr, "pr_match": result}
+
+
+@step("check_math")
+def math_node(state: PackState) -> dict:
+    return {"math_results": check_math(state["extracted"], load_config()["rules"])}
+
+
+@step("check_rules")
+def rules_node(state: PackState) -> dict:
+    results = check_rules(state["extracted"], state.get("pr"), state["math_results"], load_config()["rules"])
+    return {"rule_results": results + [state["pr_match"]]}
+
+
+@step("decide", always_run=True)
+def decide_node(state: PackState) -> dict:
+    decision, reasons = decide(state.get("rule_results", []), state.get("errors", []))
+    return {"decision": decision, "reasons": reasons}
+
+
+def human_review_node(state: PackState) -> dict:
+    """Pause the pipeline and wait for a person. Resumed with Command(resume={...})."""
+    answer = interrupt({
+        "pack_id": state.get("pack_id"),
+        "system_decision": state["decision"],
+        "reasons": [r.model_dump() for r in state["reasons"]],
+    })
+    return {"human_decision": answer, "trace": ["human_review: answered"]}
+
+
+@step("report", always_run=True)
+def report_node(state: PackState) -> dict:
+    ex = state.get("extracted") or state.get("regex") or ExtractedPack()
+    supplier, item = ex.get("supplier_name"), ex.get("item_code")
+    desc = ex.get("description")
+    result = PackResult(
+        pack_id=state.get("pack_id", ""),
+        file=state.get("source_name") or Path(state.get("pdf_path", "")).name,
+        supplier=str(supplier.value) if supplier.value else None,
+        item=f"{item.value} - {desc.value}" if item.value else None,
+        decision=state["decision"],
+        reasons=state.get("reasons", []),
+        rule_results=state.get("rule_results", []),
+        fields=ex.fields,
+        extraction_source=state.get("extraction_source", "none"),
+        errors=state.get("errors", []),
+        human_decision=state.get("human_decision"),
+        seconds=round(time.perf_counter() - state.get("started", time.perf_counter()), 2),
+    )
+    return {"result": result}
+
+
+def route_after_decide(state: PackState) -> str:
+    if state["decision"] == "NEEDS_REVIEW" and state.get("ask_human"):
+        return "human_review"
+    return "report"
+
+
+def build_graph(with_human_review: bool = False):
+    g = StateGraph(PackState)
+    for name, fn in (("parse", parse_node), ("extract", extract_node), ("verify", verify_node),
+                     ("match_pr", match_node), ("check_math", math_node), ("check_rules", rules_node),
+                     ("decide", decide_node), ("human_review", human_review_node), ("report", report_node)):
+        g.add_node(name, fn)
+    g.add_edge(START, "parse")
+    for a, b in (("parse", "extract"), ("extract", "verify"), ("verify", "match_pr"),
+                 ("match_pr", "check_math"), ("check_math", "check_rules"), ("check_rules", "decide")):
+        g.add_edge(a, b)
+    g.add_conditional_edges("decide", route_after_decide, ["human_review", "report"])
+    g.add_edge("human_review", "report")
+    g.add_edge("report", END)
+
+    if not with_human_review:
+        return g.compile()
+    serde = JsonPlusSerializer(allowed_msgpack_modules=[
+        ("checker.models", "ExtractedPack"), ("checker.models", "Field"),
+        ("checker.models", "RuleResult"), ("checker.models", "PackResult"),
+    ])
+    return g.compile(checkpointer=InMemorySaver(serde=serde))
+
+
+def initial_state(pdf_path: str | None = None, *, raw_text: str | None = None, pack_id: str = "",
+                  source_name: str = "", mode: str | None = None, ask_human: bool = False) -> PackState:
+    state: PackState = {"pack_id": pack_id, "source_name": source_name or (Path(pdf_path).name if pdf_path else ""),
+                        "ask_human": ask_human, "errors": [], "trace": [], "started": time.perf_counter()}
+    if pdf_path:
+        state["pdf_path"] = str(pdf_path)
+    if raw_text is not None:
+        state["raw_text"] = raw_text
+    if mode:
+        state["mode"] = mode
+    return state
+
+
+_GRAPH = None
+
+
+def run_pack(pdf_path: str | None = None, **kwargs) -> PackResult:
+    """Run one pack straight through (no human pause). Used by the CLI, evaluation and tests."""
+    global _GRAPH
+    if _GRAPH is None:
+        _GRAPH = build_graph(with_human_review=False)
+    return _GRAPH.invoke(initial_state(pdf_path, **kwargs))["result"]
