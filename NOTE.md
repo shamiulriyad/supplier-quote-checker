@@ -21,7 +21,7 @@ The first prompt scored 8/10 live. The LLM said "yes, VAT included" for every pa
 - One item per quotation. Multi-item quotes are marked unclear.
 - The 10/10 is on 10 documents whose answers I worked out myself. It shows the logic matches my reading of the rules, not that it generalises.
 - Some rules are ambiguous (penalty below 0.5%, VAT-inclusive prices, "4 weeks"). I made assumptions, listed in the README, rather than asking the business.
-- Human-review decisions live in memory: restart the app and they are gone. There is no audit log or login.
+- History and pending reviews are kept in a local SQLite file. That survives restarts on one machine, but not a Streamlit Cloud reboot. There is no login, and everyone on one deployment shares the history.
 - Live mode depends on the OpenAI API. If it is down, every pack goes to a person (by design).
 
 **What I would do next.**

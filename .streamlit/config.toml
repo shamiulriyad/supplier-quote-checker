@@ -1,5 +1,27 @@
 [theme]
 base = "light"
+primaryColor = "#4F46E5"
+backgroundColor = "#F7F8FA"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#172033"
+linkColor = "#4F46E5"
+borderColor = "#E5E7EB"
+dataframeBorderColor = "#E5E7EB"
+showWidgetBorder = true
+showSidebarBorder = true
+baseRadius = "6px"
+buttonRadius = "6px"
+baseFontSize = 14
+font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFont = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+chartCategoricalColors = ["#16A34A", "#F59E0B", "#DC2626", "#4F46E5"]
+
+[theme.sidebar]
+backgroundColor = "#FFFFFF"
 
 [server]
 maxUploadSize = 10
+fileWatcherType = "none"
+
+[client]
+toolbarMode = "minimal"
