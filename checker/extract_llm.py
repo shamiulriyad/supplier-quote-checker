@@ -16,6 +16,7 @@ from typing import Literal
 from pydantic import BaseModel, Field as PydField, ValidationError, create_model
 
 from .models import FIELD_KINDS, ExtractedPack, Field
+from .normalize import parse_date
 
 PROMPT_VERSION = "v2"
 SRC = "llm"
@@ -94,32 +95,70 @@ def cache_key(text: str) -> str:
     return hashlib.sha256(f"{PROMPT_VERSION}|{text}".encode("utf-8")).hexdigest()[:16]
 
 
-def _cache_path(cache_dir: str, text: str) -> Path:
-    return Path(cache_dir) / f"{cache_key(text)}.json"
+# ---- answer cache -----------------------------------------------------------------------
+# Answers are saved per document text. Where they are saved is pluggable: local JSON files
+# (default, cache_dir) or the llm_cache table when Supabase is configured (set_cache_backend).
+# They are read only in replay (testing) mode. FIXTURES_DIR is an optional, git-ignored local folder of
+# extra read-only recordings; nothing ships in the repository.
+
+FIXTURES_DIR = Path(__file__).resolve().parent.parent / "data" / "llm-replay"
+
+
+class FileCache:
+    def __init__(self, cache_dir: str | Path):
+        self.dir = Path(cache_dir)
+
+    def get(self, key: str) -> dict | None:
+        path = self.dir / f"{key}.json"
+        return json.loads(path.read_text(encoding="utf-8"))["response"] if path.exists() else None
+
+    def put(self, key: str, response: dict, model: str, document: str) -> None:
+        self.dir.mkdir(parents=True, exist_ok=True)
+        payload = {"document": document, "model": model, "prompt_version": PROMPT_VERSION,
+                   "created": datetime.now(timezone.utc).isoformat(timespec="seconds"), "response": response}
+        (self.dir / f"{key}.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def delete(self, keys: list[str]) -> int:
+        n = 0
+        for key in keys:
+            path = self.dir / f"{key}.json"
+            if path.exists():
+                path.unlink()
+                n += 1
+        return n
+
+
+_backend = None  # anything with get(key) / put(key, response, model, document) / delete(keys)
+
+
+def set_cache_backend(backend) -> None:
+    global _backend
+    _backend = backend
+
+
+def cache_backend(cache_dir: str):
+    return _backend or FileCache(cache_dir)
+
+
+def _lookup(cache_dir: str, text: str) -> dict | None:
+    key = cache_key(text)
+    found = cache_backend(cache_dir).get(key)
+    return found if found is not None else FileCache(FIXTURES_DIR).get(key)
 
 
 def has_cached(cache_dir: str, text: str) -> bool:
-    return _cache_path(cache_dir, text).exists()
+    return _lookup(cache_dir, text) is not None
 
 
 def load_cached(cache_dir: str, text: str) -> dict:
-    path = _cache_path(cache_dir, text)
-    if not path.exists():
+    response = _lookup(cache_dir, text)
+    if response is None:
         raise LLMUnavailable("No saved LLM answer for this document (run once in live mode to create it).")
-    return json.loads(path.read_text(encoding="utf-8"))["response"]
+    return response
 
 
 def save_cached(cache_dir: str, text: str, response: dict, model: str, source_name: str) -> None:
-    path = _cache_path(cache_dir, text)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "document": source_name,
-        "model": model,
-        "prompt_version": PROMPT_VERSION,
-        "created": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "response": response,
-    }
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    cache_backend(cache_dir).put(cache_key(text), response, model, source_name)
 
 
 def _client(llm_cfg: dict, timeout: float | None = None, max_retries: int | None = None):
@@ -228,6 +267,10 @@ def _to_field(name: str, raw: dict) -> Field:
             if low not in ("yes", "no", "true", "false"):
                 return Field(value=None, status="UNCLEAR", note=f"unexpected answer '{value}'", **base)
             parsed = low in ("yes", "true")
+        elif name == "quote_date":  # same schema as the regex extractor: ISO date, or unclear
+            parsed, problem = parse_date(value.strip())
+            if parsed is None:
+                return Field(value=None, status="UNCLEAR", note=problem, **base)
         else:
             parsed = value.strip()
     except (InvalidOperation, ValueError):
