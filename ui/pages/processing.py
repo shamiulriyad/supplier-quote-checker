@@ -158,7 +158,7 @@ def steps_list(job: DocumentJob) -> str:
     return f'<ul class="si-steps">{"".join(rows)}</ul>'
 
 
-def current_details(job: DocumentJob, mode: str) -> str:
+def current_details(job: DocumentJob) -> str:
     src = job.extraction_source or ""
     kind = analysis_kind(src)
     provider = {"live": "OpenAI (live call)", "replay": "Recorded OpenAI response (no API call)",
@@ -263,7 +263,7 @@ def _monitor_body() -> None:
         else:
             focus = snap.jobs[options.index(choice) - 1]
         section(f"#{focus.position:02d} {focus.filename}")
-        st.html(current_details(focus, snap.mode))
+        st.html(current_details(focus))
         st.html(steps_list(focus))
         if focus.error:
             for err in focus.error.split("; "):

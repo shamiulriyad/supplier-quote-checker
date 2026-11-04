@@ -18,10 +18,11 @@ def render() -> None:
     page_header("Validation Results", "Company-rule outcomes per document: PASS, FAIL, UNKNOWN (could not be "
                                       "verified) or N/A.")
     store = get_engine().store
-    if not store.batches():
+    batches = store.batches()
+    if not batches:
         empty_state("No results yet", "Run a batch on the Document Processing page to see rule outcomes.")
         return
-    batch_id = batch_picker("validation-batch", allow_all=False)
+    batch_id = batch_picker("validation-batch", allow_all=False, batches=batches)
     docs = [d for d in store.documents(batch_id) if d.get("result_json")]
     results = [(d, load_result(d)) for d in docs]
     if not results:

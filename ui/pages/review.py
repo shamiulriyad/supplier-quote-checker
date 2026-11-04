@@ -12,7 +12,7 @@ from .. import nav
 from ..components import fmt_value, render_reasons
 from ..state import get_engine
 from ..theme import (analysis_badge, badge, decision_badge, empty_state, explain_error, fmt_ago, fmt_dt, kv, page_header,
-                     section, status_badge)
+                     section)
 
 KEY_FIELDS = [("supplier_name", "Supplier"), ("item_code", "Item"), ("description", "Description"),
               ("quantity", "Quantity"), ("unit_price", "Unit price (BDT)"), ("advance_pct", "Advance %"),
@@ -99,8 +99,9 @@ def render() -> None:
     page_header("Human Review", "Documents the system would not decide on its own. Your decision resumes the "
                                 "paused pipeline for that document.")
     store = get_engine().store
-    pending = store.pending_reviews()
-    reviewed = [d for d in store.documents() if d["status"] == "reviewed"]
+    docs = store.documents()  # one read for both lists
+    pending = store.pending_reviews(docs)
+    reviewed = [d for d in docs if d["status"] == "reviewed"]
 
     m = st.columns(3)
     m[0].metric("Waiting for review", len(pending))

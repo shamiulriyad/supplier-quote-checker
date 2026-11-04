@@ -5,9 +5,7 @@ The extracted fields keep the original amounts (evidence); the converted copy is
 """
 from decimal import Decimal
 
-from .models import ExtractedPack, Field
-
-MONEY_FIELDS = ("unit_price", "line_amount", "subtotal", "vat_amount", "total")
+from .models import MONEY_FIELDS, ExtractedPack, Field
 
 
 def _rate(v) -> Decimal:
@@ -15,9 +13,10 @@ def _rate(v) -> Decimal:
     return d if d.as_tuple().exponent <= -2 else d.quantize(Decimal("0.01"))  # 122 -> 122.00
 
 
-def _amount(v: Decimal, places: str) -> Decimal:
+def round_amount(v: Decimal, places: str) -> Decimal:
+    """Two decimals when that is exact, otherwise `places` decimals: 575.84, not 575.8400."""
     exact = v.quantize(Decimal("0.01"))
-    return exact if exact == v else v.quantize(Decimal(places))  # 575.84, not 575.8400
+    return exact if exact == v else v.quantize(Decimal(places))
 
 
 def currency_settings(cfg: dict) -> dict:
@@ -55,7 +54,7 @@ def convert_to_base(ex: ExtractedPack, cfg: dict) -> tuple[ExtractedPack, dict]:
         places = "0.0001" if name == "unit_price" else "0.01"
         note = (f"converted from {code} {original} at {rate} {base} per {code} (company rate"
                 + (f" as of {s['as_of']})" if s["as_of"] else ")"))
-        fields[name] = f.model_copy(update={"value": _amount(original * rate, places),
+        fields[name] = f.model_copy(update={"value": round_amount(original * rate, places),
                                             "note": "; ".join(filter(None, [f.note, note]))})
     return ExtractedPack(fields=fields), {**info, "currency": code, "rate": str(rate)}
 

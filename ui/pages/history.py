@@ -20,7 +20,8 @@ def render() -> None:
     else:
         st.caption(f"Stored locally ({engine.runtime_dir.name}/app.db and {engine.runtime_dir.name}/files). On "
                    "Streamlit Community Cloud this is lost when the app restarts; configure Supabase to keep it.")
-    interrupted = store.interrupted()
+    docs = store.documents()  # one read, used for the interrupted list and the table
+    interrupted = store.interrupted(docs)
     if interrupted:
         st.info(f"{len(interrupted)} document(s) were queued or running when the app stopped (marked "
                 "*interrupted*). Their PDFs are stored, so they can be processed again.")
@@ -31,7 +32,6 @@ def render() -> None:
             nav.go("processing")
 
     batches = store.batches()
-    docs = store.documents()
     if not batches:
         empty_state("No history yet", "Processed batches will be listed here.")
         return

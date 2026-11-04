@@ -1,6 +1,4 @@
 """End-to-end tests of the LangGraph pipeline on the 10 sample packs and on bad input."""
-from decimal import Decimal as D
-
 import pytest
 from langgraph.types import Command
 

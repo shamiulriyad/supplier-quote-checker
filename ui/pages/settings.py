@@ -101,7 +101,7 @@ def render_storage(engine, busy: bool) -> None:
         ("PDF files", f"Private bucket '{engine.settings.bucket}'" if engine.persistent
          else str(engine.runtime_dir / "files")),
         ("Batches stored", str(len(store.batches()))),
-        ("Waiting for review", str(len(store.pending_reviews()))),
+        ("Waiting for review", str(store.count_pending_reviews())),
         ("Version", __version__),
     ]))
     if st.button("Test storage connection", help="Runs one database query and one bucket lookup."):

@@ -12,11 +12,9 @@ def decide(rule_results: list[RuleResult], errors: list[str]) -> tuple[Decision,
     unknown = [r for r in rule_results if r.outcome == "UNKNOWN"]
     reasons = rejects + reviews + unknown  # always list every problem, not just the first
 
-    if errors:
-        reasons = reasons + [RuleResult(rule_id="E1", category="review", title="Processing problem",
-                                        outcome="UNKNOWN", reason=e) for e in errors]
-
     if errors:  # a step failed, so even a Reject is not trustworthy: a person decides
+        reasons += [RuleResult(rule_id="E1", category="review", title="Processing problem", outcome="UNKNOWN",
+                               reason=e) for e in errors]
         return "NEEDS_REVIEW", reasons
     if rejects:
         return "REJECT", reasons

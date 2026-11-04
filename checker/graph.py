@@ -6,9 +6,9 @@ Every step does one job and writes its result into the shared state. If a step c
 error is recorded, the remaining steps are skipped and the pack goes to a person.
 """
 import operator
-from decimal import Decimal
 import os
 import time
+from decimal import Decimal
 from functools import lru_cache, wraps
 from pathlib import Path
 from typing import Annotated, Any, TypedDict
@@ -20,14 +20,14 @@ from langgraph.types import interrupt
 
 from . import extract_llm
 from .config import load_config
+from .currency import convert_to_base, round_amount
 from .decide import decide
 from .extract_regex import extract_regex
 from .match import load_purchase_request, match_pr
 from .math_check import check_math
 from .models import ExtractedPack, PackResult, RuleResult
 from .parse import DocumentError, read_pdf_pages
-from .rules import check_rules
-from .currency import convert_to_base
+from .rules import check_rules, pct_diff, price_limit
 from .verification import verification_checks
 from .verify import merge
 
@@ -48,11 +48,11 @@ SOURCE_LABELS = {
 def analysis_kind(source: str | None) -> str:
     """'live' | 'replay' | 'regex' | 'unknown' from an extraction_source (also understands pre-2.1 labels)."""
     s = source or ""
-    if s.startswith(LIVE) or s.startswith("OpenAI + regex"):
+    if s.startswith((LIVE, "OpenAI + regex")):
         return "live"
-    if s.startswith(REPLAY) or s.startswith("saved OpenAI"):
+    if s.startswith((REPLAY, "saved OpenAI")):
         return "replay"
-    if s.startswith(REGEX_ONLY) or s.startswith("regex only"):
+    if s.startswith((REGEX_ONLY, "regex only")):
         return "regex"
     return "unknown"
 
@@ -232,35 +232,34 @@ def financial_summary(ex: ExtractedPack, pr: dict | None, conversion: dict | Non
 
     Read-only: computed from this document's verified fields and its purchase-request line; it does not decide.
     """
-    q, price = _num(ex.get("quantity")), _num(ex.get("unit_price"))
+    q, quoted, total = _num(ex.get("quantity")), _num(ex.get("unit_price")), _num(ex.get("total"))
     conv = conversion or {}
     rate = Decimal(conv["rate"]) if conv.get("rate") else None
     if conversion is not None and rate is None:
         price = None  # unclear currency or no company rate: not comparable with the purchase request
-    elif rate is not None and price is not None:
-        price = price * rate
+    elif rate is not None and quoted is not None:
+        price = quoted * rate
+    else:
+        price = quoted
     out = {
         "currency": conv.get("currency"), "exchange_rate": conv.get("rate"), "rates_as_of": conv.get("rates_as_of"),
         "currency_note": conv.get("note"),
-        "unit_price_quoted": _num(ex.get("unit_price")), "total_quoted": _num(ex.get("total")),
+        "unit_price_quoted": quoted, "total_quoted": total,
         "quantity": q, "unit": ex.get("unit").value, "unit_price": price,
         "line_amount": _num(ex.get("line_amount")), "subtotal": _num(ex.get("subtotal")),
         "vat_rate": _num(ex.get("vat_rate")), "vat_amount": _num(ex.get("vat_amount")),
-        "total": _num(ex.get("total")), "price_includes_vat": ex.get("price_includes_vat").value,
-        "unit_price_bdt": price.quantize(Decimal("0.01")) if price is not None and price == price.quantize(Decimal("0.01"))
-        else (price.quantize(Decimal("0.0001")) if price is not None else None),
-        "computed_line_amount": (q * _num(ex.get("unit_price"))).quantize(Decimal("0.01"))
-        if q is not None and _num(ex.get("unit_price")) is not None else None,
+        "total": total, "price_includes_vat": ex.get("price_includes_vat").value,
+        "unit_price_bdt": round_amount(price, "0.0001") if price is not None else None,
+        "computed_line_amount": (q * quoted).quantize(Decimal("0.01")) if q is not None and quoted is not None
+        else None,
     }
     if pr:
-        limit = pr["max_price"] * (1 + load_config()["rules"]["reject_price_over_pct"] / 100)
         out.update({
             "pr_number": pr["pr_number"], "pr_item": pr["item"], "requested_quantity": pr["quantity"],
-            "max_unit_price": pr["max_price"], "reject_above_price": limit.quantize(Decimal("0.001")),
-            "price_deviation_pct": ((price - pr["max_price"]) / pr["max_price"] * 100).quantize(Decimal("0.01"))
-            if price is not None else None,
-            "quantity_deviation_pct": ((q - pr["quantity"]) / pr["quantity"] * 100).quantize(Decimal("0.01"))
-            if q is not None else None,
+            "max_unit_price": pr["max_price"],
+            "reject_above_price": price_limit(pr["max_price"], load_config()["rules"]).quantize(Decimal("0.001")),
+            "price_deviation_pct": pct_diff(price, pr["max_price"]) if price is not None else None,
+            "quantity_deviation_pct": pct_diff(q, pr["quantity"]) if q is not None else None,
         })
     return {k: (str(v) if isinstance(v, Decimal) else v) for k, v in out.items()}
 

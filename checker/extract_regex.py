@@ -9,7 +9,7 @@ import re
 from datetime import date
 from decimal import Decimal
 
-from .models import AMBIGUOUS, DOC_CONFLICT, Candidate, ExtractedPack, Field
+from .models import AMBIGUOUS, DOC_CONFLICT, MONEY_FIELDS, Candidate, ExtractedPack, Field
 from .normalize import (CURRENCY, DATE, MALFORMED_NUMBER, MONEY, NUM, parse_date, to_decimal, unit_name)
 from .parse import normalize, sentence_at, split_clauses
 
@@ -128,6 +128,7 @@ _HEADER_WORDS = [("desc", r"item\s+description|description|particulars|product|g
                  ("qty", r"quantity|qty"),
                  ("unit", r"unit|uom|u/m"),
                  ("code", r"item(?:\s*(?:code|no\.?|#))?|code|sl\.?|s/n")]
+_HEADER_RE = re.compile("|".join(f"(?P<{name}>\\b(?:{rx})\\b)" for name, rx in _HEADER_WORDS), re.I)
 
 
 def _fixed_line(text: str) -> list[tuple]:
@@ -139,24 +140,15 @@ def _fixed_line(text: str) -> list[tuple]:
 
 def _header_columns(line: str) -> list[str] | None:
     """Column order from a header line such as 'Description | Qty | Unit | Rate (BDT) | Amount'."""
-    pattern = "|".join(f"(?P<{name}>\\b(?:{rx})\\b)" for name, rx in _HEADER_WORDS)
-    cols = []
-    for m in re.finditer(pattern, line, re.I):
-        name = m.lastgroup
-        if name not in cols:
-            cols.append(name)
+    cols = list(dict.fromkeys(m.lastgroup for m in _HEADER_RE.finditer(line)))
     numeric = [c for c in cols if c in ("qty", "price", "amount")]
     return cols if len(numeric) == 3 and "desc" in cols else None
 
 
 def _cell_name(cell: str) -> str | None:
-    cols = _header_columns_any(cell)
-    return cols[0] if cols else None
-
-
-def _header_columns_any(line: str) -> list[str]:
-    pattern = "|".join(f"(?P<{name}>\\b(?:{rx})\\b)" for name, rx in _HEADER_WORDS)
-    return [m.lastgroup for m in re.finditer(pattern, line, re.I)]
+    """Column a single table cell belongs to, from its first header keyword."""
+    m = _HEADER_RE.search(cell)
+    return m.lastgroup if m else None
 
 
 def _pipe_table(lines: list[str], i: int) -> tuple[list[tuple], str | None]:
@@ -525,7 +517,6 @@ def _validity(text: str, clauses: dict, f: dict) -> None:
     f["validity_days"] = not_found("no quotation validity period")
 
 
-MONEY_FIELDS = ("unit_price", "line_amount", "subtotal", "vat_amount", "total")
 # currency marker -> ISO code. "¥" is ambiguous (yen or yuan), so it is not mapped.
 CURRENCY_CODES = [(r"\bBDT\b|\bTk\.?(?=[\s\d)]|$)|\bTaka\b|৳", "BDT"), (r"\bUSD\b|\bUS\$|(?<![\w])\$", "USD"),
                   (r"\bEUR\b|€", "EUR"), (r"\bGBP\b|£", "GBP"), (r"\bINR\b|₹|\bRs\.?(?=[\s\d])", "INR"),

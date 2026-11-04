@@ -3,7 +3,6 @@
 Objects are addressed by content: `pdfs/<sha256[:2]>/<sha256>.pdf`, so the same PDF is stored once.
 Nothing here ever creates a public URL; files are read server-side with the service key.
 """
-import hashlib
 import re
 import time
 from pathlib import Path
@@ -14,10 +13,6 @@ _PATH = re.compile(r"^pdfs/[0-9a-f]{2}/[0-9a-f]{64}\.pdf$")
 
 class StorageUnavailable(Exception):
     """Storage could not be reached, or an operation kept failing after retries."""
-
-
-def sha256(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
 
 
 def storage_path_for(file_hash: str) -> str:

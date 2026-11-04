@@ -66,7 +66,8 @@ def _match_pr(ex: ExtractedPack, pr_lines: dict[str, dict]) -> tuple[dict | None
         elif _simple(str(f.value)) != _simple(expected):
             problems.append(f"{name.replace('_', ' ')} is \"{f.value}\" but the purchase request says \"{expected}\"")
 
-    evidence = [q for q in {ex.get(n).quote for n, _ in checks} if q] + [pr_text(pr)]
+    # unique quotes in check order (a set here made the evidence order change from run to run)
+    evidence = [q for q in dict.fromkeys(ex.get(n).quote for n, _ in checks) if q] + [pr_text(pr)]
     if problems:
         return pr, RuleResult(rule_id="X1", category="review", title=title, outcome="FAIL",
                               reason="; ".join(problems).capitalize() + ".", evidence=evidence)

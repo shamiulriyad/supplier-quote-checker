@@ -20,8 +20,14 @@ def _why_unknown(name: str, f: Field) -> str:
     return f"Could not read the {label} with certainty ({f.note or f.status.lower().replace('_', ' ')})."
 
 
-def _pct_over(price: Decimal, max_price: Decimal) -> Decimal:
-    return ((price - max_price) / max_price * 100).quantize(Decimal("0.01"))
+def pct_diff(value: Decimal, reference: Decimal) -> Decimal:
+    """Signed difference from the reference in percent, 2 decimals (price and quantity deviation)."""
+    return ((value - reference) / reference * 100).quantize(Decimal("0.01"))
+
+
+def price_limit(max_price: Decimal, rules: dict) -> Decimal:
+    """Highest unit price that is not rejected (R1): the purchase-request maximum plus the allowed %."""
+    return max_price * (1 + rules["reject_price_over_pct"] / 100)
 
 
 def price_rules(ex: ExtractedPack, pr: dict | None, rules: dict) -> list[RuleResult]:
@@ -32,8 +38,8 @@ def price_rules(ex: ExtractedPack, pr: dict | None, rules: dict) -> list[RuleRes
         return [_res("R1", t1, "UNKNOWN", why, price.quote), _res("N1", t2, "UNKNOWN", why, price.quote)]
 
     p, mx = Decimal(price.value), pr["max_price"]
-    limit = mx * (1 + rules["reject_price_over_pct"] / 100)
-    over = _pct_over(p, mx)
+    limit = price_limit(mx, rules)
+    over = pct_diff(p, mx)
     vat_note = " (price includes VAT; compared as quoted)" if ex.get("price_includes_vat").value is True else ""
     ev = (price.quote, pr_text(pr))
     if p > limit:
@@ -111,7 +117,7 @@ def quantity_rule(ex: ExtractedPack, pr: dict | None, rules: dict) -> RuleResult
         return _res("N2", t, "UNKNOWN", "No matching purchase-request line." if pr is None
                     else _why_unknown("quantity", f), f.quote)
     q, req = Decimal(f.value), pr["quantity"]
-    diff = ((q - req) / req * 100).quantize(Decimal("0.01"))
+    diff = pct_diff(q, req)
     ev = (f.quote, pr_text(pr))
     if abs(diff) > tol:
         return _res("N2", t, "FAIL", f"Quoted quantity {q:,} vs requested {req:,} ({diff:+}%; limit ±{tol}%).", *ev)
@@ -218,23 +224,29 @@ def annotate(r: RuleResult, ex: ExtractedPack, pr: dict | None, rules: dict,
     """Add the expected condition and the actual value to a rule result."""
     g = ex.get
     mx = pr["max_price"] if pr else None
-    limit = (mx * (1 + rules["reject_price_over_pct"] / 100)).quantize(Decimal("0.001")) if pr else None
+    limit = price_limit(mx, rules).quantize(Decimal("0.001")) if pr else None
     price = _show(g("unit_price"), " BDT")
     if r.rule_id in ("R1", "N1") and g("unit_price").ok and pr:
-        price += f" ({_pct_over(Decimal(g('unit_price').value), mx):+}% vs maximum)"
-    days = (f"{g('payment_days_min').value}-{g('payment_days_max').value} days"
-            if g("payment_days_min").value != g("payment_days_max").value else _show(g("payment_days_min"), " days"))
-    if not (g("payment_days_min").ok and g("payment_days_max").ok):
-        days = _show(g("payment_days_min"), " days")
+        price += f" ({pct_diff(Decimal(g('unit_price').value), mx):+}% vs maximum)"
+    dmin, dmax = g("payment_days_min"), g("payment_days_max")
+    if dmin.ok and dmax.ok and dmin.value != dmax.value:
+        days = f"{dmin.value}-{dmax.value} days"
+    else:
+        days = _show(dmin, " days")
     vat = ("prices include VAT" if g("price_includes_vat").value is True else _show(g("vat_rate"), "%"))
+    penalty = g("penalty_pct")
+    if penalty.status == "NOT_FOUND":
+        penalty_actual = "no penalty clause"
+    elif penalty.value is not None:
+        penalty_actual = "penalty clause present"
+    else:
+        penalty_actual = _show(penalty)
     math_actual = "; ".join(f"{m.title}: {m.outcome}" for m in math_results) or "not checked"
     table = {
         "R1": (f"Unit price ≤ {limit} BDT (maximum {mx} + {rules['reject_price_over_pct']}%)" if pr
                else f"Unit price ≤ maximum + {rules['reject_price_over_pct']}%", price),
         "R2": (f"Advance ≤ {rules['max_advance_pct']}%", _show(g("advance_pct"), "%")),
-        "R3": ("A late-delivery penalty clause is present",
-               "no penalty clause" if g("penalty_pct").status == "NOT_FOUND" else "penalty clause present"
-               if g("penalty_pct").value is not None else _show(g("penalty_pct"))),
+        "R3": ("A late-delivery penalty clause is present", penalty_actual),
         "R4": ("Supplier TIN and BIN are both given", f"TIN {_show(g('tin'))}; BIN {_show(g('bin'))}"),
         "R5": (f"Delivery ≤ {rules['max_delivery_days']} days after the purchase order",
                _show(g("delivery_days"), " days")),

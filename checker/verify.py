@@ -46,11 +46,11 @@ def value_in_quote(name: str, f: Field) -> bool:
     if kind == "bool":
         return True  # yes/no is a reading of the quote, not a copy of it
     if kind == "text":
-        if name == "quote_date" and parse_date(str(f.value))[0]:
-            return any(parse_date(d)[0] == parse_date(str(f.value))[0]
-                       for d in re.findall(r"[\w./\-, ]{6,24}", f.quote) if parse_date(d.strip())[0]) \
-                or normalize(str(f.value)) in normalize(f.quote)
-        return normalize(str(f.value)) in normalize(f.quote)
+        written = normalize(str(f.value)) in normalize(f.quote)
+        if name == "quote_date" and (iso := parse_date(str(f.value))[0]):
+            # the quote may write the same date differently ("3 Nov 2026" for 2026-11-03)
+            return any(parse_date(d)[0] == iso for d in re.findall(r"[\w./\-, ]{6,24}", f.quote)) or written
+        return written
     nums = _numbers_in(f.quote)
     v = Decimal(f.value)
     if kind == "days":  # value may have been converted from weeks or months

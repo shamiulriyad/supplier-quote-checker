@@ -54,7 +54,9 @@ UNVERIFIED = "unverified"            # quote not in the document, or the value i
 AMBIGUOUS = "ambiguous in document"  # range, vague or contradictory wording
 SUSPICIOUS = "suspicious value"      # impossible value (negative quantity, VAT over 100%, ...)
 NOT_IN_DOC = "not found"
-TRUSTED = (MATCHED, SINGLE_SOURCE)
+
+# Amounts that are converted to the base currency (checker.currency) and used to find the price lines.
+MONEY_FIELDS = ("unit_price", "line_amount", "subtotal", "vat_amount", "total")
 
 
 class Candidate(BaseModel):

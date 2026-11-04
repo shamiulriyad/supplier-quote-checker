@@ -2,7 +2,6 @@
 from .models import PackResult
 
 LABEL = {"APPROVE": "Approve", "REJECT": "Reject", "NEEDS_REVIEW": "Needs a person to check"}
-ICON = {"FAIL": "x", "UNKNOWN": "?", "PASS": "ok", "N/A": "-"}
 
 
 def main_reason(r: PackResult) -> str:

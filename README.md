@@ -202,6 +202,9 @@ SUPABASE_STORAGE_BUCKET=supplier-documents      # optional
 Set all of the first three, or none. If only some are set, the app stops with a message naming what is
 missing; it never silently falls back to local storage.
 
+Optional: `SQC_RUNTIME_DIR` moves the local runtime folder (SQLite history, review checkpoints, local PDF
+copies) away from `runtime/`; the tests use it to get a fresh folder.
+
 ### 6. Local development
 `cp .env.example .env`, fill in the values, `streamlit run app.py`. **Settings → Test storage connection**
 checks the database and the bucket. The sidebar shows which storage is in use.

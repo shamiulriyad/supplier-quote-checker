@@ -186,6 +186,8 @@ def test_review_interrupt_and_resume(engine):
     snap = run(engine, queue_of(engine, "04"))
     doc_id = snap.jobs[0].document_id
     assert [d["document_id"] for d in engine.store.pending_reviews()] == [doc_id]
+    assert engine.store.pending_reviews(engine.store.documents()) == engine.store.pending_reviews()
+    assert engine.store.count_pending_reviews() == 1
     assert engine.can_resume(doc_id)
 
     result = engine.submit_review(doc_id, "APPROVE", "2% over is acceptable this month")
@@ -194,6 +196,7 @@ def test_review_interrupt_and_resume(engine):
     doc = engine.store.document(doc_id)
     assert (doc["status"], doc["human_decision"]) == ("reviewed", "APPROVE")
     assert engine.store.pending_reviews() == []
+    assert engine.store.count_pending_reviews() == 0
     assert not engine.can_resume(doc_id)
     stages = [e["stage"] for e in engine.store.events(document_id=doc_id) if e["status"] == "completed"]
     assert stages[-2:] == ["human_review", "report"]

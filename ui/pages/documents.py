@@ -8,8 +8,9 @@ from ..state import get_engine
 from ..theme import empty_state, fmt_dt, fmt_seconds, page_header, section
 
 
-def batch_picker(key: str, allow_all: bool = True) -> str | None:
-    batches = get_engine().store.batches()
+def batch_picker(key: str, allow_all: bool = True, batches: list[dict] | None = None) -> str | None:
+    """`batches`: rows the page already read with store.batches() (saves a second query)."""
+    batches = get_engine().store.batches() if batches is None else batches
     if not batches:
         return None
     labels = {b["batch_id"]: f"{b['batch_id']} · {b['total']} docs · {b['mode']} · {b['status']}" for b in batches}
@@ -38,7 +39,8 @@ def render() -> None:
     if requested:
         st.session_state.documents_focus = requested
 
-    if not store.batches():
+    batches = store.batches()
+    if not batches:
         empty_state("No documents yet", "Process documents on the Document Processing page; they will appear here.")
         if st.button("Go to Document Processing", type="primary"):
             nav.go("processing")
@@ -46,7 +48,7 @@ def render() -> None:
 
     c1, c2 = st.columns([2, 3])
     with c1:
-        batch_id = batch_picker("documents-batch")
+        batch_id = batch_picker("documents-batch", batches=batches)
     with c2:
         query = st.text_input("Search by file or supplier", placeholder="e.g. pack-05 or Meghna")
     docs = store.documents(batch_id)
