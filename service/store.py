@@ -21,15 +21,12 @@ SELECT d.*, d.id AS document_id, d.original_filename AS filename, d.processing_s
 FROM documents d JOIN batches b ON b.batch_id = d.batch_id
 """
 VISIBLE = "d.processing_status <> 'deleting'"
+REVIEW_STATUSES = ("waiting_review", "reviewing")  # waiting for a person
 
 EVENT_INSERT = "INSERT INTO document_events (batch_id, document_id, event_type, event_data, created_at)"
 STEP_UPSERT = "INSERT INTO pipeline_checkpoints (document_id, step_name, status, checkpoint_data, created_at, updated_at)"
 STEP_CONFLICT = ("ON CONFLICT (document_id, step_name) DO UPDATE SET status = excluded.status, "
                  "checkpoint_data = excluded.checkpoint_data, updated_at = excluded.updated_at")
-
-
-def now() -> str:
-    return now_iso()
 
 
 def _event_row(batch_id: str, e) -> tuple:
@@ -46,7 +43,7 @@ class HistoryStore:
     # ---------------------------------------------------------------- batches & documents
     def create_batch(self, batch_id: str, mode: str, documents: list[dict]) -> None:
         """Insert a batch and its documents in one transaction (idempotent if retried)."""
-        ts = now()
+        ts = now_iso()
 
         def tx(t):
             t.execute("INSERT INTO batches (batch_id, mode, status, total, created_at, updated_at) "
@@ -70,7 +67,7 @@ class HistoryStore:
     def _update(self, table: str, key: str, value: str, cols: dict, tx=None) -> None:
         if not cols:
             return
-        cols = {**cols, "updated_at": now()}
+        cols = {**cols, "updated_at": now_iso()}
         sql = f"UPDATE {table} SET {', '.join(f'{k} = ?' for k in cols)} WHERE {key} = ?"
         params = (*[to_json(v) if isinstance(v, (dict, list)) else v for v in cols.values()], value)
         if tx is not None:
@@ -84,10 +81,13 @@ class HistoryStore:
         """Result, the document's events and its step statuses: committed together."""
         cols = {"processing_status": status, "supplier": result.supplier, "item": result.item,
                 "decision": result.decision, "extraction_source": result.extraction_source,
-                "seconds": result.seconds, "processed_at": now(), "failed_stage": failed_stage,
+                "seconds": result.seconds, "processed_at": now_iso(), "failed_stage": failed_stage,
                 "error": "; ".join(result.errors) or None, "extracted_text": raw_text,
                 "result_json": result.model_dump_json()}
+        self._save_document(document_id, cols, batch_id, events, steps)
 
+    def _save_document(self, document_id: str, cols: dict, batch_id: str | None, events, steps: dict | None) -> None:
+        """Update the document row, add its events and upsert its step statuses in one transaction."""
         def tx(t):
             self._update("documents", "id", document_id, cols, tx=t)
             if batch_id and events:
@@ -109,7 +109,7 @@ class HistoryStore:
 
     @staticmethod
     def _write_steps(t, document_id: str, steps: dict) -> None:
-        ts = now()
+        ts = now_iso()
         t.insert_many(STEP_UPSERT, [(document_id, name, s["status"], to_json(s.get("data") or {}), ts, ts)
                                     for name, s in steps.items()], STEP_CONFLICT)
 
@@ -117,7 +117,7 @@ class HistoryStore:
     def claim_review(self, document_id: str) -> None:
         """Atomically move waiting_review -> reviewing. Blocks a second submission of the same review."""
         n = self.db.execute("UPDATE documents SET processing_status = 'reviewing', updated_at = ? "
-                            "WHERE id = ? AND processing_status = 'waiting_review'", (now(), document_id))
+                            "WHERE id = ? AND processing_status = 'waiting_review'", (now_iso(), document_id))
         if n != 1:
             raise AlreadyReviewed(document_id)
 
@@ -127,22 +127,15 @@ class HistoryStore:
     def save_review(self, document_id: str, decision: str, comment: str, result: PackResult | None,
                     *, batch_id: str | None = None, events=(), steps: dict | None = None) -> None:
         cols = {"processing_status": "reviewed", "human_decision": decision, "human_comment": comment,
-                "reviewed_at": now()}
+                "reviewed_at": now_iso()}
         if result is not None:
             cols["result_json"] = result.model_dump_json()
-
-        def tx(t):
-            self._update("documents", "id", document_id, cols, tx=t)
-            if batch_id and events:
-                t.insert_many(EVENT_INSERT, [_event_row(batch_id, e) for e in events])
-            if steps:
-                self._write_steps(t, document_id, steps)
-        self.db.run(tx)
+        self._save_document(document_id, cols, batch_id, events, steps)
 
     # ---------------------------------------------------------------- restart / recovery
     def mark_stale(self) -> int:
         """After a restart, anything that was running can no longer finish. Say so instead of hiding it."""
-        ts = now()
+        ts = now_iso()
 
         def tx(t):
             n = t.execute("UPDATE documents SET processing_status = 'interrupted', updated_at = ?, error = "
@@ -162,7 +155,7 @@ class HistoryStore:
 
     def mark_deleting(self, document_ids: list[str]) -> None:
         if document_ids:
-            ts = now()
+            ts = now_iso()
             self.db.run(lambda t: t.executemany(
                 "UPDATE documents SET processing_status = 'deleting', updated_at = ? WHERE id = ?",
                 [(ts, i) for i in document_ids]))
@@ -198,7 +191,7 @@ class HistoryStore:
     def cache_put(self, key: str, response: dict, model: str, document: str, prompt_version: str) -> None:
         self.db.execute("INSERT INTO llm_cache (cache_key, model, prompt_version, document, response, created_at) "
                         "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (cache_key) DO UPDATE SET response = excluded.response, "
-                        "model = excluded.model", (key, model, prompt_version, document, to_json(response), now()))
+                        "model = excluded.model", (key, model, prompt_version, document, to_json(response), now_iso()))
 
     def cache_delete(self, keys: list[str]) -> int:
         if not keys:
@@ -231,12 +224,20 @@ class HistoryStore:
         rows = self.db.query(DOC_SELECT + " WHERE d.id = ?", (document_id,))
         return rows[0] if rows else None
 
-    def pending_reviews(self) -> list[dict]:
-        pending = [d for d in self.documents() if d["status"] in ("waiting_review", "reviewing")]
+    # `docs`: rows already read with documents(), so a page that needs both does not query twice.
+    def pending_reviews(self, docs: list[dict] | None = None) -> list[dict]:
+        docs = self.documents() if docs is None else docs
+        pending = [d for d in docs if d["status"] in REVIEW_STATUSES]
         return sorted(pending, key=lambda d: (d.get("processed_at") or "", d["document_id"]))  # oldest first
 
-    def interrupted(self) -> list[dict]:
-        return [d for d in self.documents() if d["status"] == "interrupted" and d.get("storage_path")]
+    def count_pending_reviews(self) -> int:
+        """len(pending_reviews()) without reading every document row (the sidebar shows it on every page)."""
+        return self.db.query("SELECT COUNT(*) AS n FROM documents d JOIN batches b ON b.batch_id = d.batch_id "
+                             "WHERE d.processing_status IN ('waiting_review', 'reviewing')")[0]["n"]
+
+    def interrupted(self, docs: list[dict] | None = None) -> list[dict]:
+        docs = self.documents() if docs is None else docs
+        return [d for d in docs if d["status"] == "interrupted" and d.get("storage_path")]
 
     def events(self, document_id: str | None = None, batch_id: str | None = None) -> list[dict]:
         sql, args = "SELECT * FROM document_events WHERE 1 = 1", []
@@ -261,10 +262,6 @@ class HistoryStore:
                              "WHERE document_id = ?", (document_id,))
         return {r["step_name"]: {"status": r["status"], "data": as_json(r["checkpoint_data"]) or {},
                                  "updated_at": r["updated_at"]} for r in rows}
-
-    def counts(self) -> dict[str, int]:
-        rows = self.db.query("SELECT processing_status AS s, COUNT(*) AS n FROM documents GROUP BY processing_status")
-        return {r["s"]: r["n"] for r in rows}
 
 
 def load_result(doc: dict) -> PackResult | None:

@@ -42,9 +42,6 @@ class ProgressEvent:
     metadata: dict[str, Any] = field(default_factory=dict)
     warning: str | None = None
 
-    def to_dict(self) -> dict:
-        return {**self.__dict__, "timestamp": self.timestamp.isoformat(timespec="seconds")}
-
 
 def _count_status(extracted) -> Counter:
     return Counter(f.status for f in extracted.fields.values()) if extracted else Counter()
@@ -107,7 +104,6 @@ def describe_output(stage: str, out: dict) -> tuple[str, str, dict, str | None]:
 @dataclass
 class StreamOutcome:
     interrupted: bool = False
-    interrupt_value: Any = None
     result: Any = None  # PackResult when the graph reached `report`
     decision: str | None = None
     raw_text: str | None = None
@@ -134,7 +130,6 @@ def stream_document(graph, payload, config: dict, document_id: str, filename: st
         ms = (time.perf_counter() - started.pop(chunk["id"], time.perf_counter())) * 1000
         if chunk.get("interrupts"):
             outcome.interrupted = True
-            outcome.interrupt_value = chunk["interrupts"][0]["value"]
             emit(ProgressEvent(document_id, filename, name, WAITING,
                                "Paused: waiting for a person to approve or reject", duration_ms=ms))
             continue

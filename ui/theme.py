@@ -4,6 +4,8 @@ from html import escape
 
 import streamlit as st
 
+from checker.graph import LIVE, REGEX_ONLY, REPLAY, analysis_kind
+
 C = {
     "bg": "#F7F8FA", "surface": "#FFFFFF", "text": "#172033", "muted": "#64748B", "accent": "#4F46E5",
     "success": "#16A34A", "warning": "#D97706", "error": "#DC2626", "border": "#E5E7EB", "subtle": "#F1F5F9",
@@ -28,9 +30,9 @@ STAGE_ICON = {  # stage status -> (glyph, css class, label)
 OUTCOME_TONE = {"PASS": "success", "FAIL": "error", "UNKNOWN": "warning", "N/A": "neutral"}
 # How a document was read (checker.graph.analysis_kind) -> (label, tone)
 ANALYSIS = {
-    "live": ("Live AI Analysis", "success"),
-    "regex": ("AI unavailable — Regex-only analysis", "warning"),
-    "replay": ("Recorded AI Response — Not Live", "warning"),
+    "live": (LIVE, "success"),
+    "regex": (REGEX_ONLY, "warning"),
+    "replay": (REPLAY, "warning"),
     "unknown": ("Not analysed yet", "neutral"),
 }
 
@@ -136,8 +138,6 @@ def status_badge(status: str | None) -> str:
 
 
 def analysis_badge(source: str | None) -> str:
-    from checker.graph import analysis_kind
-
     label, tone = ANALYSIS[analysis_kind(source)]
     return badge(label, tone)
 
@@ -216,9 +216,6 @@ def fmt_ago(iso: str | None) -> str:
     if secs < 86400:
         return f"{int(secs // 3600)} h {int(secs % 3600 // 60)} min"
     return f"{int(secs // 86400)} d"
-
-
-SOURCE_LABEL = {"llm": "LLM", "regex": "REGEX", "llm+regex": "LLM + REGEX"}
 
 
 def explain_error(msg: str | None) -> str | None:

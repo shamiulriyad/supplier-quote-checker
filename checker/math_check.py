@@ -58,15 +58,15 @@ def check_math(ex: ExtractedPack, rules: dict) -> list[RuleResult]:
 
     # M3 VAT amount = subtotal x VAT rate,  M4 total = subtotal + VAT
     if vat_separate:
+        t = f"VAT amount = subtotal x {vat_pct}%"
         v = _need(ex, "subtotal", "vat_amount")
         if v is None:
-            out.append(_r("M3", "VAT amount = subtotal x 15%", "UNKNOWN",
-                          f"Missing {_missing(ex, 'subtotal', 'vat_amount')}."))
+            out.append(_r("M3", t, "UNKNOWN", f"Missing {_missing(ex, 'subtotal', 'vat_amount')}."))
         else:
             sub, vat = v
             expected = (sub * vat_pct / 100).quantize(Decimal("0.01"))
             ok = abs(expected - vat) <= tol
-            out.append(_r("M3", "VAT amount = subtotal x 15%", "PASS" if ok else "FAIL",
+            out.append(_r("M3", t, "PASS" if ok else "FAIL",
                           f"{vat_pct}% of {sub:,.2f} = {expected:,.2f}; document says {vat:,.2f}.",
                           q("vat_amount")))
         v = _need(ex, "subtotal", "vat_amount", "total")

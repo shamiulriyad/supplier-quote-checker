@@ -4,6 +4,7 @@ import os
 import streamlit as st
 
 from checker.config import load_config
+from checker.graph import resolve_mode
 from service.batch import DocumentQueue, Engine
 
 MODES = {
@@ -41,14 +42,14 @@ def api_key_configured() -> bool:
 
 
 def effective_source(mode: str) -> str:
-    """What `auto` will actually do right now (mirrors checker.graph.resolve_mode)."""
+    """What `auto` will actually do right now (decided by checker.graph.resolve_mode)."""
     if mode != "auto":
         return mode
-    return "live AI" if api_key_configured() else "regex-only (no OpenAI API key)"
+    return "live AI" if resolve_mode(mode) == "live" else "regex-only (no OpenAI API key)"
 
 
 def external_calls_enabled(mode: str) -> bool:
-    return mode == "live" or (mode == "auto" and api_key_configured())
+    return resolve_mode(mode) == "live"
 
 
 def api_status() -> tuple[str, str]:

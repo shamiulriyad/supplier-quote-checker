@@ -5,12 +5,13 @@ from html import escape
 import pandas as pd
 import streamlit as st
 
+from checker.config import load_config
 from checker.models import FIELD_KINDS, PackResult
 from service.progress import STAGE_LABEL
 from service.store import load_result
 
 from .state import get_engine
-from .theme import (SOURCE_LABEL, analysis_badge, decision_badge, explain_error, fmt_bytes, fmt_dt, fmt_ms, fmt_seconds, kv,
+from .theme import (analysis_badge, decision_badge, explain_error, fmt_bytes, fmt_dt, fmt_ms, fmt_seconds, kv,
                     outcome_badge, quote, section, status_badge)
 
 CATEGORY = {"reject": "Reject rule", "review": "Needs-check rule", "math": "Arithmetic",
@@ -113,7 +114,7 @@ def _money(v) -> str:
         return "—"
 
 
-def render_decision(result: PackResult, doc: dict) -> None:
+def render_decision(result: PackResult) -> None:
     """Document information, final decision with reasons, financial analysis, rule-by-rule analysis."""
     f = result.fields
     val = lambda n: fmt_value(f[n].value) if n in f and f[n].value is not None else "not verified"  # noqa: E731
@@ -161,7 +162,8 @@ def render_decision(result: PackResult, doc: dict) -> None:
              f"quantity × price = {_money(fin.get('computed_line_amount'))}", ""),
             (f"Subtotal ({doc_cur})", _money(fin.get("subtotal")), "", ""),
             ("VAT", f"{fmt_value(fin.get('vat_rate'))}% = {_money(fin.get('vat_amount'))}" if fin.get("vat_rate")
-             else ("included in prices" if fin.get("price_includes_vat") else "not shown"), "15% required", ""),
+             else ("included in prices" if fin.get("price_includes_vat") else "not shown"),
+             f"{load_config()['rules']['vat_rate_pct']}% required", ""),
             (f"Total ({doc_cur})", _money(fin.get("total")), "", ""),
         ]
         st.dataframe(pd.DataFrame(rows, columns=["Item", "Document", "Purchase request / check", "Deviation"]),
@@ -279,7 +281,7 @@ def render_document(doc: dict, key: str = "doc") -> None:
     tabs = st.tabs(["Decision", "Evidence", "Extraction evidence", "Rule validation", "Document text",
                     "PDF preview", "Processing log"])
     with tabs[0]:
-        render_decision(result, doc)
+        render_decision(result)
     with tabs[1]:
         section("Failed or uncertain rules")
         render_reasons(result)

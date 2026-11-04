@@ -128,3 +128,25 @@ def test_pipeline_error_overrides_reject(base_pack, rules):
     results = check_rules(ex, pr, check_math(ex, rules), rules) + [x1]
     assert decide(results, [])[0] == "REJECT"
     assert decide(results, ["LLM failed"])[0] == "NEEDS_REVIEW"
+
+
+def test_shared_price_and_deviation_helpers(rules):
+    from checker.rules import pct_diff, price_limit
+    assert price_limit(D("480.00"), rules) == D("494.40")  # maximum + 3%
+    assert pct_diff(D("472.00"), D("480.00")) == D("-1.67")
+    assert pct_diff(D(12600), D(12000)) == D("5.00")
+
+
+def test_vat_check_title_follows_the_configured_rate(base_pack, rules):
+    ten = {**rules, "vat_rate_pct": D(10)}
+    m3 = next(m for m in check_math(base_pack, ten) if m.rule_id == "M3")
+    assert m3.title == "VAT amount = subtotal x 10%"
+    assert next(m for m in check_math(base_pack, rules) if m.rule_id == "M3").title == "VAT amount = subtotal x 15%"
+
+
+def test_pr_match_evidence_has_a_stable_order(base_pack):
+    """Item line, then the reference line, then the purchase-request line (was set order, i.e. random)."""
+    _pr, x1 = match_pr(base_pack, load_purchase_request(load_config()["purchase_request"]))
+    assert x1.evidence[0].startswith("A Cotton twill fabric")
+    assert "Reference PR-2026-114" in x1.evidence[1]
+    assert x1.evidence[2].startswith("PR-2026-114 item A")

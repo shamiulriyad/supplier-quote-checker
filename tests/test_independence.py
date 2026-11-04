@@ -41,7 +41,8 @@ def test_stored_result_is_never_reused_as_a_decision(engine):
 def test_processing_reads_nothing_from_the_history_store(engine, monkeypatch):
     def forbidden(*a, **k):
         raise AssertionError("the pipeline read stored history")
-    for name in ("documents", "document", "batches", "events", "steps", "pending_reviews", "cache_get"):
+    for name in ("documents", "document", "batches", "events", "steps", "pending_reviews", "count_pending_reviews",
+                 "interrupted", "cache_get"):
         monkeypatch.setattr(engine.store, name, forbidden)
     snap = run(engine, DATA / "supplier-pack-01.pdf", DATA / "supplier-pack-06.pdf")
     assert [j.decision for j in snap.jobs] == ["APPROVE", "REJECT"]

@@ -89,7 +89,9 @@ class DocumentQueue:
         name = safe_filename(filename or p.name)
         if not p.exists():
             return False, f"{name}: file not found"
-        digest = hashlib.sha256(p.read_bytes()).hexdigest()
+        return self._add(p, name, source, hashlib.sha256(p.read_bytes()).hexdigest())
+
+    def _add(self, p: Path, name: str, source: str, digest: str) -> tuple[bool, str]:
         if any(i.sha256 == digest for i in self.items):
             return False, f"{name} is already in the queue"
         valid, message = validate_pdf(p)
@@ -108,11 +110,11 @@ class DocumentQueue:
         path = self.upload_dir / f"{digest}.pdf"  # file name never comes from the user
         if not path.exists():
             path.write_bytes(data)
-        return self.add_file(path, filename=name, source=source)
+        return self._add(path, name, source, digest)  # the bytes are already hashed: no second read
 
     def remove(self, item_ids: list[str]) -> int:
-        before = len(self.items)
-        self.items = [i for i in self.items if i.item_id not in set(item_ids)]
+        before, drop = len(self.items), set(item_ids)
+        self.items = [i for i in self.items if i.item_id not in drop]
         return before - len(self.items)
 
     def clear(self) -> None:

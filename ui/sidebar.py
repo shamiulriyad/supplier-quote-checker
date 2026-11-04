@@ -19,7 +19,7 @@ def render_sidebar_footer() -> None:
     if runner and runner.is_running():
         c = runner.snapshot().counts()
         activity = f'<div>{badge(f"Processing {c["completed"]}/{c["total"]}", "accent")}</div>'
-    waiting = len(engine.store.pending_reviews())
+    waiting = engine.store.count_pending_reviews()
     reviews = f'<div>{badge(f"{waiting} waiting for review", "warning")}</div>' if waiting else ""
     with st.sidebar:
         st.divider()
