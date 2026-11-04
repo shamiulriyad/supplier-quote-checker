@@ -107,7 +107,7 @@ uploads in one batch are decided independently · edge cases: prices in another 
 Unchanged and Streamlit Community Cloud compatible: same entry point (`app.py`), same environment variables
 (`OPENAI_API_KEY`, optional `SUPABASE_URL` / `SUPABASE_KEY` / `SUPABASE_DB_URL` / `SUPABASE_STORAGE_BUCKET`),
 no new runtime dependencies and no local model. Stored results gained fields (page, verification, candidates,
-expected/actual, financial); older stored results still open. See the README for setup.
+expected/actual, financial); older stored results still open. See [SETUP.md](SETUP.md) for setup.
 
 ## Next
 1. Measure extraction per field on real supplier quotes from many suppliers.
