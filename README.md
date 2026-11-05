@@ -16,7 +16,7 @@ reason.**
 |---|---|
 | 🌐 **Live app** | **https://supplier-quote-checker-6dxzcg8emkywq5yadryrph.streamlit.app/** |
 | 🛠️ **Setup & run guide** | [SETUP.md](SETUP.md): requirements, installation, configuration, tests, deployment |
-| 📝 **One-page note** | [NOTE.md](NOTE.md): approach, trade-offs, limitations |
+| 📝 **One-page note** | [NOTE.md](NOTE.md): what it does, tests, results, what does not work well, next steps |
 
 > **AI reads. Code decides. When anything is unclear, a person decides.**
 
@@ -324,13 +324,14 @@ supplier-quote-checker/
 ├── supabase/            SQL migrations (schema, Row Level Security, private bucket)
 ├── tools/               supabase_setup.py, migrate_local_history.py
 ├── tests/               pytest suite, answer key (expected.csv), unseen-layout PDF fixtures
+├── docs/                full design notes (design-notes.md), architecture audit, Supabase migration
 ├── assets/diagrams/     documentation diagrams
 ├── config.yaml          rule thresholds, model, mode, exchange rates
 ├── run.py               command-line runner
 ├── evaluate.py          scores results against tests/expected.csv
 ├── README.md            this file
 ├── SETUP.md             setup, run and deployment guide
-└── NOTE.md              one-page design note
+└── NOTE.md              one-page note (what, tests, results, limits, next)
 ```
 
 Created at run time and not in git: `runtime/` (local history, review checkpoints, PDFs), `cache/llm/` (new
@@ -364,7 +365,7 @@ Where the company rules are not explicit:
 | No login | Everyone using a deployment shares one history | Supabase Auth + per-user Row Level Security |
 | One batch at a time per server | Batches queue behind each other | Worker queue |
 
-More detail in [NOTE.md](NOTE.md).
+More detail in [NOTE.md](NOTE.md) and [docs/design-notes.md](docs/design-notes.md).
 
 ---
 
